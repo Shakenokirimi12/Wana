@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wana-ingest",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // KV for system config — id is synced from apps/worker via `pnpm provision:system-config-kv`
+  "kv_namespaces": [
+    {
+      "binding": "SYSTEM_CONFIG",
+      "id": "placeholder-kv-id"
+    }
+  ],
+  // D1 for control plane data
+  "d1_databases": [
+    {
+      "binding": "DB_CONTROL",
+      "database_name": "wana-control-plane",
+      "database_id": "placeholder-d1-id"
+    }
+  ],
+  // Queue producer for error ingestion
+  "queues": {
+    "producers": [
+      {
+        "binding": "ERROR_QUEUE",
+        "queue": "wana-error-queue"
+      }
+    ]
+  }
+}

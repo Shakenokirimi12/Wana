@@ -1,0 +1,38 @@
+{
+  "name": "@wana/schema",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./control-plane": {
+      "types": "./src/control-plane.ts",
+      "import": "./src/control-plane.ts"
+    },
+    "./data-plane": {
+      "types": "./src/data-plane.ts",
+      "import": "./src/data-plane.ts"
+    },
+    "./data-plane-migrations": {
+      "types": "./src/data-plane-migrations.ts",
+      "import": "./src/data-plane-migrations.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^5.8.0"
+  }
+}

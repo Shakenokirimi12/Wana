@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wana — Sentry playground</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        background: #09090b;
+        color: #e4e4e7;
+      }
+      body {
+        max-width: 52rem;
+        margin: 2rem auto;
+        padding: 0 1rem 3rem;
+      }
+      label {
+        display: block;
+        margin-top: 1rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+      input,
+      select {
+        width: 100%;
+        margin-top: 0.25rem;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        border: 1px solid #3f3f46;
+        background: #18181b;
+        color: inherit;
+        box-sizing: border-box;
+      }
+      .row2 {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr 1fr;
+      }
+      @media (max-width: 540px) {
+        .row2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      button {
+        margin-top: 0.75rem;
+        margin-right: 0.5rem;
+        padding: 0.45rem 0.85rem;
+        border-radius: 0.375rem;
+        border: none;
+        background: #f59e0b;
+        color: #18181b;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.8125rem;
+      }
+      button.secondary {
+        background: #3f3f46;
+        color: #fafafa;
+      }
+      button.ghost {
+        background: transparent;
+        border: 1px solid #52525b;
+        color: #e4e4e7;
+        font-weight: 500;
+      }
+      fieldset {
+        margin-top: 1.5rem;
+        border: 1px solid #3f3f46;
+        border-radius: 0.5rem;
+        padding: 1rem 1rem 1.25rem;
+      }
+      legend {
+        padding: 0 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+      .scenario-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        align-items: center;
+      }
+      .scenario-grid button {
+        margin: 0;
+      }
+      #log {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        border-radius: 0.375rem;
+        background: #18181b;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        min-height: 6rem;
+        max-height: 22rem;
+        overflow: auto;
+        border: 1px solid #27272a;
+      }
+      p.hint,
+      .hint {
+        font-size: 0.8125rem;
+        color: #a1a1aa;
+        margin-top: 0.35rem;
+        line-height: 1.45;
+      }
+      code.inline {
+        font-size: 0.8em;
+        background: #27272a;
+        padding: 0.1em 0.35em;
+        border-radius: 0.25rem;
+      }
+      .burst-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin-top: 0.75rem;
+      }
+      .burst-row input[type="number"] {
+        width: 4rem;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sentry playground</h1>
+    <p class="hint">
+      ダッシュボードの DSN を貼り、<strong>Initialize</strong> 後にシナリオを送ります。各ボタンは
+      <code class="inline">stack</code> やメッセージが異なるので、<strong>別 Issue</strong> として分かれます。同じボタンを繰り返すと
+      <strong>同一 Issue の Event が増えます</strong>（本番の再発と同じ）。
+    </p>
+
+    <label for="dsn">DSN</label>
+    <input
+      id="dsn"
+      type="text"
+      placeholder="http://YOUR_KEY@127.0.0.1:8787/proj_01"
+      autocomplete="off"
+    />
+
+    <div class="row2">
+      <div>
+        <label for="env">Environment</label>
+        <input id="env" type="text" value="playground" autocomplete="off" />
+      </div>
+      <div>
+        <label for="release">Release</label>
+        <input
+          id="release"
+          type="text"
+          value="wana-playground@1.0.0+dev"
+          autocomplete="off"
+        />
+      </div>
+    </div>
+
+    <div>
+      <button type="button" id="btn-init">Initialize SDK</button>
+    </div>
+
+    <label for="msg">カスタム文面（下の「カスタム」ボタン用）</label>
+    <input id="msg" type="text" value="Wana playground — custom text" />
+
+    <fieldset>
+      <legend>別 Issue になるシナリオ（例外）</legend>
+      <p class="hint">
+        決済・認証・ビルド・ポリフィルなど、スタックの先頭が異なる代表例です。
+      </p>
+      <div class="scenario-grid">
+        <button type="button" class="ghost" data-scenario="checkout">
+          TypeError 決済
+        </button>
+        <button type="button" class="ghost" data-scenario="auth">
+          認証セッション
+        </button>
+        <button type="button" class="ghost" data-scenario="chunk">
+          チャンク読込失敗
+        </button>
+        <button type="button" class="ghost" data-scenario="polyfill">
+          ReferenceError  polyfill
+        </button>
+        <button type="button" class="ghost" data-scenario="hydration">
+          Hydration mismatch
+        </button>
+        <button type="button" class="ghost" data-scenario="custom-ex">
+          カスタム captureException
+        </button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>メッセージのみ（captureMessage → Issue 化）</legend>
+      <p class="hint">
+        SDK のログ系。logger / level が違えば別 Issue になります。
+      </p>
+      <div class="scenario-grid">
+        <button type="button" class="ghost" data-scenario="msg-info">
+          Message info
+        </button>
+        <button type="button" class="ghost" data-scenario="msg-warn">
+          Message warning
+        </button>
+        <button type="button" class="ghost" data-scenario="msg-custom">
+          カスタム captureMessage
+        </button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>実運用に近い付与（タグ・ユーザー・breadcrumb）</legend>
+      <p class="hint">次の 1 回だけ、決済シナリオにコンテキストを付けて送ります。</p>
+      <button type="button" class="ghost" id="btn-rich-checkout">
+        Rich context + TypeError 決済
+      </button>
+    </fieldset>
+
+    <fieldset>
+      <legend>再送・バースト</legend>
+      <p class="hint">
+        <strong>直近のシナリオ</strong>と同じ Issue にイベントを足します（連打・リトライの再現）。
+      </p>
+      <div class="scenario-grid">
+        <button type="button" class="secondary" id="btn-repeat">もう一度（直近と同じ）</button>
+      </div>
+      <div class="burst-row">
+        <label for="burst" style="margin: 0; font-size: 0.8125rem"
+          >回数</label
+        >
+        <input type="number" id="burst" min="1" max="50" value="5" />
+        <button type="button" class="secondary" id="btn-burst">バースト送信</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>手動（従来）</legend>
+      <div>
+        <button type="button" id="btn-error" class="secondary">
+          captureException（カスタム文面）
+        </button>
+        <button type="button" id="btn-message" class="secondary">
+          captureMessage（カスタム文面）
+        </button>
+      </div>
+    </fieldset>
+
+    <div id="log" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

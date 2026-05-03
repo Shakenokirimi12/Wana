@@ -1,0 +1,27 @@
+{
+  "name": "@wana/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./project-store": "./src/do/ProjectDataStore.ts"
+  },
+  "scripts": {
+    "dev": "wrangler dev --port 8788 --inspector-port 9232",
+    "deploy": "wrangler deploy --minify",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "dependencies": {
+    "@wana/schema": "workspace:*",
+    "@wana/types": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.12.16"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250421.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.4.0"
+  }
+}

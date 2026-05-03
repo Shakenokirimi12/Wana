@@ -1,0 +1,36 @@
+{
+  "name": "wana",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Native Error Tracker - Sentry-compatible, self-hostable",
+  "scripts": {
+    "dev": "turbo run dev --filter=@wana/ingest --filter=@wana/worker --filter=@wana/dashboard",
+    "dev:playground": "pnpm --filter @wana/sentry-playground dev",
+    "preview": "bash scripts/preview-stack.sh",
+    "test:stack": "bash scripts/smoke-stack.sh",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate --filter=@wana/schema",
+    "db:migrate": "turbo run db:migrate --filter=@wana/schema",
+    "wana": "wana",
+    "deploy:cloud": "wana deploy",
+    "provision:system-config-kv": "pnpm --filter @wana/worker exec wrangler kv namespace create wana-system-config --binding SYSTEM_CONFIG --update-config && node scripts/sync-system-config-kv.mjs",
+    "sync:system-config-kv": "node scripts/sync-system-config-kv.mjs"
+  },
+  "keywords": [
+    "error-tracking",
+    "cloudflare",
+    "sentry",
+    "observability"
+  ],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "@wana/cli": "workspace:*",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0",
+    "wait-on": "^9.0.5"
+  }
+}

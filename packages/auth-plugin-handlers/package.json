@@ -1,0 +1,19 @@
+{
+  "name": "@wana/auth-plugin-handlers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^13.3.0",
+    "@wana/schema": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.12.16"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250421.0",
+    "typescript": "^5.8.0"
+  }
+}

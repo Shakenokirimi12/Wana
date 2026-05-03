@@ -1,0 +1,64 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "wana-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-02",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	// Rules for importing SQL files
+	"rules": [
+		{
+			"type": "Text",
+			"globs": [
+				"**/*.sql"
+			],
+			"fallthrough": true
+		}
+	],
+	// KV for system config (maintenance mode). Before first deploy, run from repo root:
+	//   pnpm provision:system-config-kv
+	"kv_namespaces": [
+		{
+			"binding": "SYSTEM_CONFIG",
+			"id": "placeholder-kv-id"
+		}
+	],
+	// R2 for storing full error payloads
+	"r2_buckets": [
+		{
+			"binding": "PAYLOAD_STORAGE",
+			"bucket_name": "wana-payloads"
+		}
+	],
+	// Queue consumer for processing errors
+	"queues": {
+		"consumers": [
+			{
+				"queue": "wana-error-queue",
+				"max_batch_size": 100,
+				"max_batch_timeout": 5
+			}
+		]
+	},
+	// Durable Objects for per-project data storage
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "PROJECT_DO",
+				"class_name": "ProjectDataStore"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"ProjectDataStore"
+			]
+		}
+	]
+}

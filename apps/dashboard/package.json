@@ -1,0 +1,43 @@
+{
+  "name": "@wana/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:css": "mkdir -p dist/static && pnpm exec tailwindcss -i ./app/styles/app.css -o ./dist/static/style.css --minify",
+    "build": "rm -rf dist && vite build --mode client && vite build && node scripts/write-pages-routes.mjs",
+    "preview": "wrangler pages dev",
+    "deploy": "pnpm run build && wrangler pages deploy",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "shadcn": "pnpm dlx shadcn@latest"
+  },
+  "dependencies": {
+    "@wana/auth-plugin-handlers": "workspace:*",
+    "@hono/react-renderer": "^1.0.1",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.0",
+    "@wana/schema": "workspace:*",
+    "@wana/types": "workspace:*",
+    "@wana/worker": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.12.16",
+    "honox": "^0.1.55",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250421.0",
+    "@hono/vite-build": "^1.2.0",
+    "@hono/vite-dev-server": "^0.25.2",
+    "@tailwindcss/cli": "4.2.4",
+    "@tailwindcss/vite": "4.2.4",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "tailwindcss": "4.2.4",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.5",
+    "wrangler": "^4.4.0"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "wana-webauthn-plugin",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "SYSTEM_CONFIG",
+      "id": "placeholder-kv-id"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB_CONTROL",
+      "database_name": "wana-control-plane",
+      "database_id": "placeholder-d1-id"
+    }
+  ],
+  "vars": {
+    "WEBAUTHN_RP_NAME": "Wana",
+    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true"
+  }
+}

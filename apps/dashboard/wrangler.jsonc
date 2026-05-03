@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wana-dashboard",
+  "compatibility_date": "2026-05-02",
+  "pages_build_output_dir": "./dist",
+  "compatibility_flags": ["nodejs_compat"],
+  // SYSTEM_CONFIG KV id is synced from apps/worker — run `pnpm provision:system-config-kv` once
+  "kv_namespaces": [
+    {
+      "binding": "SYSTEM_CONFIG",
+      "id": "placeholder-kv-id"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB_CONTROL",
+      "database_name": "wana-control-plane",
+      "database_id": "placeholder-d1-id"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PAYLOAD_STORAGE",
+      "bucket_name": "wana-payloads"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "SEND_MAIL"
+    }
+  ],
+  "vars": {
+    "INGEST_PUBLIC_URL": "http://127.0.0.1:8787",
+    "DASHBOARD_USER_ID": "user_01",
+    "DASHBOARD_DEV_FALLBACK": "true",
+    "MAIL_FROM": "noreply@example.com",
+    "SENTRY_PLAYGROUND_URL": "http://127.0.0.1:8790",
+    "WEBAUTHN_RP_NAME": "Wana",
+    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROJECT_DO",
+        "class_name": "ProjectDataStore",
+        "script_name": "wana-worker"
+      }
+    ]
+  },
+  // Optional: deploy `plugins/webauthn-worker` as `wana-webauthn-plugin` and uncomment:
+  // "services": [{ "binding": "AUTH_PLUGIN", "service": "wana-webauthn-plugin" }]
+}
