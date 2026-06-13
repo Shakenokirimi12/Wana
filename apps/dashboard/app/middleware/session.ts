@@ -45,7 +45,7 @@ export const sessionMiddleware = createMiddleware<{ Bindings: Env }>(
       }
     }
 
-    if (!userId && isDashboardDevFallback(c.env)) {
+    if (!userId && isDashboardDevFallback(c.env, c)) {
       if (!getCookie(c, DEV_FALLBACK_SUPPRESS_COOKIE_NAME)) {
         const raw = c.env.DASHBOARD_USER_ID?.trim();
         if (raw) {

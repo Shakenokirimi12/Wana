@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 
 import {
@@ -9,6 +9,14 @@ import {
 } from "@wana/schema/control-plane";
 
 import { hashInviteToken } from "./invite-token.js";
+
+export async function countUsers(d1: D1Database): Promise<number> {
+  const db = drizzle(d1);
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(users);
+  return rows[0]?.count ?? 0;
+}
 
 export async function getUserByEmail(
   d1: D1Database,
@@ -141,6 +149,17 @@ export async function inviteTokenAllowsWebAuthnRegistration(
   tokenPlain: string,
   email: string
 ): Promise<boolean> {
+  if (tokenPlain === "bootstrap-token") {
+    // First-admin bootstrap only: exactly one user, that user is the target,
+    // AND they have NO passkey yet. Once the admin registers a credential the
+    // window closes, so an attacker can't enroll their own key on the account.
+    const userCount = await countUsers(d1);
+    if (userCount !== 1) return false;
+    const user = await getUserByEmail(d1, email);
+    if (!user) return false;
+    const creds = await listWebAuthnCredentialIdsForUser(d1, user.id);
+    return creds.length === 0;
+  }
   const details = await getInviteDetailsForAccept(d1, tokenPlain);
   if (!details) {
     return false;

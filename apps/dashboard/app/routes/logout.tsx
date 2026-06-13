@@ -23,7 +23,7 @@ export default createRoute(async (c) => {
   const base = { path: "/", secure, sameSite: "Lax" as const };
   deleteCookie(c, SESSION_COOKIE_NAME, { ...base, httpOnly: true });
   deleteCookie(c, ACTIVE_ORG_COOKIE_NAME, { ...base, httpOnly: true });
-  if (isDashboardDevFallback(c.env)) {
+  if (isDashboardDevFallback(c.env, c)) {
     // Otherwise DASHBOARD_DEV_FALLBACK + DASHBOARD_USER_ID "re-logs in" on the next request.
     setCookie(c, DEV_FALLBACK_SUPPRESS_COOKIE_NAME, "1", {
       ...base,

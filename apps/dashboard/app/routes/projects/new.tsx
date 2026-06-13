@@ -34,9 +34,9 @@ export default createRoute(async (c) => {
     return c.render(
       <Shell title="New project" playgroundUrl={pg} auth="signed-in">
         <Card className="p-8">
-          <p className="text-sm leading-relaxed text-zinc-400">
+          <p className="text-sm leading-relaxed text-kumo-subtle">
             D1 に organization がありません。シード（
-            <code className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-sm text-zinc-300">
+            <code className="rounded bg-kumo-base px-1.5 py-0.5 font-mono text-sm text-kumo-default">
               scripts/setup-local.sh
             </code>
             ）を実行するか、手動で行を追加してください。
@@ -87,7 +87,7 @@ export default createRoute(async (c) => {
             mono
             placeholder="my-app-prod"
           />
-          <p className="text-xs leading-relaxed text-zinc-500">
+          <p className="text-xs leading-relaxed text-kumo-subtle">
             Sentry のブラウザ SDK は、数字で始まりその後に英字などが続く ID（例:
             生の UUID）を先頭の数字だけに短縮します。英字・
             <code className="font-mono">_</code>
@@ -134,7 +134,7 @@ export const POST = createRoute(async (c) => {
           description={
             <>
               公開鍵（sentry_key）は再表示しません。ヒントとして保存するのは{" "}
-              <span className="font-mono text-zinc-300">{result.hint}</span>{" "}
+              <span className="font-mono text-kumo-default">{result.hint}</span>{" "}
               のみです。
             </>
           }
@@ -142,30 +142,30 @@ export const POST = createRoute(async (c) => {
 
         <div className="space-y-6">
           <Card className="overflow-hidden">
-            <div className="border-b border-zinc-800/80 px-5 py-3 sm:px-6">
-              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+              <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
                 Public key
               </div>
             </div>
-            <pre className="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-zinc-200 sm:p-6">
+            <pre className="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-kumo-default sm:p-6">
               {result.plainKey}
             </pre>
           </Card>
 
           <Card className="overflow-hidden">
-            <div className="border-b border-zinc-800/80 px-5 py-3 sm:px-6">
-              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+              <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
                 DSN（ingest ホストを置換）
               </div>
             </div>
-            <pre className="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-zinc-200 sm:p-6">
+            <pre className="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-kumo-default sm:p-6">
               {dsn}
             </pre>
           </Card>
 
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-kumo-subtle">
             Ingest の公開 URL はダッシュボードの{" "}
-            <code className="rounded bg-zinc-800/80 px-1 font-mono text-zinc-400">
+            <code className="rounded bg-kumo-base px-1 font-mono text-kumo-subtle">
               INGEST_PUBLIC_URL
             </code>{" "}
             （wrangler vars）で変えられます。

@@ -53,9 +53,9 @@ export default createRoute(async (c) => {
       <Shell title="Team not found" playgroundUrl={pg} auth="signed-in">
         <PageHeader title="チームが見つかりません" description="" />
         <Card className="max-w-lg p-6">
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-kumo-subtle">
             slug{" "}
-            <span className="font-mono text-zinc-400">{rawSlug}</span>{" "}
+            <span className="font-mono text-kumo-subtle">{rawSlug}</span>{" "}
             に一致する組織がありません。
           </p>
           <div className="mt-6">
@@ -111,11 +111,11 @@ export default createRoute(async (c) => {
         description={
           <>
             スラッグ{" "}
-            <span className="font-mono text-zinc-400">{resolved.slug}</span>
+            <span className="font-mono text-kumo-subtle">{resolved.slug}</span>
             {" · "}
             あなたのロール: <Badge variant="zinc">{role}</Badge>
-            {isDashboardDevFallback(c.env) ? (
-              <span className="ml-2 text-xs text-zinc-600">
+            {isDashboardDevFallback(c.env, c) ? (
+              <span className="ml-2 text-xs text-kumo-subtle">
                 （dev fallback 有効）
               </span>
             ) : null}
@@ -137,7 +137,7 @@ export default createRoute(async (c) => {
       {canAdmin ? (
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           <Card className="p-6">
-            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
               チーム名・スラッグ
             </h2>
             <form
@@ -164,7 +164,7 @@ export default createRoute(async (c) => {
           </Card>
 
           <Card className="p-6">
-            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
               招待を作成
             </h2>
             <form
@@ -210,9 +210,9 @@ export default createRoute(async (c) => {
                 name="invited_email"
                 placeholder="colleague@example.com"
               />
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-kumo-subtle">
                 作成後、秘密トークン付き URL を一度だけ画面に表示します。メール送信は{" "}
-                <code className="font-mono text-zinc-400">SEND_MAIL</code>{" "}
+                <code className="font-mono text-kumo-subtle">SEND_MAIL</code>{" "}
                 設定時のみ。
               </p>
               <ButtonSecondary type="submit">招待を作成</ButtonSecondary>
@@ -222,32 +222,32 @@ export default createRoute(async (c) => {
       ) : null}
 
       <Card className="max-w-3xl overflow-hidden">
-        <div className="border-b border-zinc-800/80 px-5 py-3 sm:px-6">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
             メンバー
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[32rem] text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-800/60 text-xs text-zinc-500">
+              <tr className="border-b border-kumo-hairline text-xs text-kumo-subtle">
                 <th className="px-5 py-3 font-medium sm:px-6">名前</th>
                 <th className="px-3 py-3 font-medium">メール</th>
                 <th className="px-3 py-3 font-medium">ユーザー名</th>
                 <th className="px-5 py-3 font-medium sm:px-6">ロール</th>
               </tr>
             </thead>
-            <tbody className="text-zinc-300">
+            <tbody className="text-kumo-default">
               {members.map((m) => (
                 <tr
                   key={m.userId}
-                  className="border-b border-zinc-800/40 last:border-0"
+                  className="border-b border-kumo-hairline last:border-0"
                 >
                   <td className="px-5 py-3 sm:px-6">
-                    <span className="font-medium text-zinc-100">{m.name}</span>
+                    <span className="font-medium text-kumo-default">{m.name}</span>
                   </td>
-                  <td className="px-3 py-3 text-zinc-400">{m.email}</td>
-                  <td className="px-3 py-3 font-mono text-xs text-zinc-500">
+                  <td className="px-3 py-3 text-kumo-subtle">{m.email}</td>
+                  <td className="px-3 py-3 font-mono text-xs text-kumo-subtle">
                     {m.username ?? "—"}
                   </td>
                   <td className="px-5 py-3 sm:px-6">
@@ -262,12 +262,12 @@ export default createRoute(async (c) => {
 
       {canAdmin && invites.length > 0 ? (
         <Card className="mt-8 max-w-3xl overflow-hidden">
-          <div className="border-b border-zinc-800/80 px-5 py-3 sm:px-6">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
               未処理の招待
             </h2>
           </div>
-          <ul className="divide-y divide-zinc-800/80">
+          <ul className="divide-y divide-kumo-hairline">
             {invites.map((inv) => (
               <li
                 key={inv.id}
@@ -276,13 +276,13 @@ export default createRoute(async (c) => {
                 <div className="min-w-0 space-y-1 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="zinc">{inv.role}</Badge>
-                    <span className="text-zinc-500">
+                    <span className="text-kumo-subtle">
                       {inv.useCount}/{inv.maxUses} 回 · 期限{" "}
                       {inv.expiresAt.toISOString().slice(0, 16).replace("T", " ")}{" "}
                       UTC
                     </span>
                   </div>
-                  <p className="truncate text-xs text-zinc-600">
+                  <p className="truncate text-xs text-kumo-subtle">
                     {inv.invitedEmail
                       ? `メール: ${inv.invitedEmail}`
                       : inv.invitedUsername
@@ -428,10 +428,10 @@ export const POST = createRoute(async (c) => {
             description="リンクをコピーして共有してください。"
           />
           <Card className="max-w-3xl space-y-4 p-6">
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-zinc-800 bg-zinc-950/80 p-4 font-mono text-sm text-amber-100/90">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-kumo-hairline bg-kumo-recessed p-4 font-mono text-sm text-amber-100/90">
               {inviteUrl}
             </pre>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-kumo-subtle">
               メールチャネルかつ SMTP 設定済みの場合、宛先へも送信済みです。
             </p>
             <TextLink href={redirectBase}>← チーム設定へ</TextLink>

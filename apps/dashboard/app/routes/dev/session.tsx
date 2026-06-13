@@ -8,7 +8,7 @@ import { createDashboardSession } from "@/lib/dashboard-session";
  * POST only. Disabled when `DASHBOARD_DEV_FALLBACK` is unset.
  */
 export const POST = createRoute(async (c) => {
-  if (!isDashboardDevFallback(c.env)) {
+  if (!isDashboardDevFallback(c.env, c)) {
     return c.text("Forbidden", 403);
   }
   const body = await c.req.parseBody();
