@@ -131,12 +131,19 @@ export async function setMemberRole(
   if (!actor || !orgRoleAtLeast(actor, "admin")) {
     throw new Error("メンバーのロール変更には admin 以上が必要です");
   }
+  if (input.targetUserId === input.actorUserId) {
+    throw new Error("自分自身のロールはここで変更できません");
+  }
   const target = await getOrgMembership(d1, input.targetUserId, input.orgId);
   if (!target) throw new Error("対象はこのチームのメンバーではありません");
   if (target === "owner") {
     throw new Error(
       "オーナーのロールはここで変更できません（オーナー移譲を使ってください）"
     );
+  }
+  // Only an owner may modify another admin (admins can't demote peers).
+  if (target === "admin" && actor !== "owner") {
+    throw new Error("他の admin のロール変更は owner のみ可能です");
   }
   const db = createDb(d1);
   await db
@@ -165,10 +172,17 @@ export async function removeMember(
   if (!actor || !orgRoleAtLeast(actor, "admin")) {
     throw new Error("メンバーの削除には admin 以上が必要です");
   }
+  if (input.targetUserId === input.actorUserId) {
+    throw new Error("自分自身はここで削除できません");
+  }
   const target = await getOrgMembership(d1, input.targetUserId, input.orgId);
   if (!target) return;
   if (target === "owner") {
     throw new Error("オーナーは削除できません（先にオーナーを移譲してください）");
+  }
+  // Only an owner may remove another admin.
+  if (target === "admin" && actor !== "owner") {
+    throw new Error("他の admin の削除は owner のみ可能です");
   }
   const db = createDb(d1);
   await db
@@ -203,24 +217,27 @@ export async function transferOwnership(
   if (!target) throw new Error("対象はこのチームのメンバーではありません");
 
   const db = createDb(d1);
-  await db
-    .update(organizationMembers)
-    .set({ role: "owner" })
-    .where(
-      and(
-        eq(organizationMembers.orgId, input.orgId),
-        eq(organizationMembers.userId, input.targetUserId)
-      )
-    );
-  await db
-    .update(organizationMembers)
-    .set({ role: "admin" })
-    .where(
-      and(
-        eq(organizationMembers.orgId, input.orgId),
-        eq(organizationMembers.userId, input.actorUserId)
-      )
-    );
+  // Atomic promote+demote so a crash/race can't leave two owners or none.
+  await db.batch([
+    db
+      .update(organizationMembers)
+      .set({ role: "owner" })
+      .where(
+        and(
+          eq(organizationMembers.orgId, input.orgId),
+          eq(organizationMembers.userId, input.targetUserId)
+        )
+      ),
+    db
+      .update(organizationMembers)
+      .set({ role: "admin" })
+      .where(
+        and(
+          eq(organizationMembers.orgId, input.orgId),
+          eq(organizationMembers.userId, input.actorUserId)
+        )
+      ),
+  ]);
   await recordAuditEvent(d1, {
     actorUserId: input.actorUserId,
     orgId: input.orgId,
