@@ -28,6 +28,7 @@ import {
   Badge,
   ButtonDestructiveOutline,
   ButtonPrimary,
+  ButtonSecondary,
   Card,
   InputField,
   IssueStatusToolbar,
@@ -41,6 +42,7 @@ import {
   EventPayloadView,
   parseStoredEventPayload,
 } from "@/ui/event-payload";
+import CopyButton from "@/islands/copy-button";
 import type { Env } from "@/types/bindings";
 
 const projectsRoute = new Hono<{ Bindings: Env }>();
@@ -120,19 +122,36 @@ function IssueStreamTabs(props: {
   );
 }
 
-function IssueStreamQueryBar(props: { queryParam: string }) {
+function IssueStreamQueryBar(props: {
+  projectId: string;
+  queryParam: string;
+  search: string;
+}) {
   return (
-    <div className="mb-4 flex items-center gap-2 rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 py-2">
-      <span className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
-        Filter
-      </span>
-      <code className="rounded bg-kumo-recessed px-2 py-0.5 font-mono text-xs text-amber-400/90">
-        {props.queryParam}
-      </code>
-      <span className="text-xs text-kumo-subtle">
-        (Sentry-style stream; search bar is planned.)
-      </span>
-    </div>
+    <form
+      method="get"
+      action={`/p/${props.projectId}`}
+      role="search"
+      className="mb-4 flex flex-wrap items-center gap-2"
+    >
+      <input type="hidden" name="query" value={props.queryParam} />
+      <input
+        type="search"
+        name="search"
+        defaultValue={props.search}
+        placeholder="issue を検索（メッセージ・型・culprit）"
+        className="h-9 min-w-[14rem] flex-1 rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 text-sm text-kumo-default placeholder:text-kumo-subtle focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+      />
+      <ButtonSecondary type="submit">検索</ButtonSecondary>
+      {props.search ? (
+        <a
+          href={`/p/${props.projectId}?query=${encodeURIComponent(props.queryParam)}`}
+          className="text-xs text-kumo-subtle hover:text-kumo-default"
+        >
+          クリア
+        </a>
+      ) : null}
+    </form>
   );
 }
 
@@ -225,7 +244,8 @@ function IssueStreamEmpty(props: {
 projectsRoute.get("/:projectId/live.js", async (c) => {
   const projectId = c.req.param("projectId");
   const streamQuery = c.req.query("q") ?? "";
-  const js = projectIssuesLiveScript(projectId, streamQuery);
+  const search = c.req.query("search") ?? "";
+  const js = projectIssuesLiveScript(projectId, streamQuery, search);
   return c.body(js, 200, {
     "Content-Type": "application/javascript; charset=utf-8",
     "Cache-Control": "private, no-store",
@@ -325,10 +345,22 @@ projectsRoute.get("/:projectId", async (c) => {
   }) as unknown as IssueStreamRow[];
 
   const streamQueryParam = issueStreamQueryParam(streamFilter);
+
+  const search = c.req.query("search")?.trim() ?? "";
+  const searchLower = search.toLowerCase();
+  const streamRows = search
+    ? issueRows.filter(
+        (r) =>
+          r.value.toLowerCase().includes(searchLower) ||
+          r.type.toLowerCase().includes(searchLower) ||
+          (r.culprit ?? "").toLowerCase().includes(searchLower)
+      )
+    : issueRows;
+
   const emptyKind =
     tabCounts.all === 0
       ? ("none" as const)
-      : issueRows.length === 0
+      : streamRows.length === 0
         ? ("filtered" as const)
         : null;
 
@@ -339,7 +371,7 @@ projectsRoute.get("/:projectId", async (c) => {
         description={
           <>
             <span className="text-kumo-subtle">{project.orgName}</span>
-            <span className="mx-2 text-zinc-700">·</span>
+            <span className="mx-2 text-kumo-subtle">·</span>
             <Badge variant="zinc">{project.orgSlug}</Badge>
           </>
         }
@@ -360,7 +392,11 @@ projectsRoute.get("/:projectId", async (c) => {
           counts={tabCounts}
           projectId={projectId}
         />
-        <IssueStreamQueryBar queryParam={streamQueryParam} />
+        <IssueStreamQueryBar
+          projectId={projectId}
+          queryParam={streamQueryParam}
+          search={search}
+        />
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -375,7 +411,7 @@ projectsRoute.get("/:projectId", async (c) => {
             >
               <span
                 id="wana-live-dot"
-                className="h-2 w-2 shrink-0 rounded-full bg-zinc-600 ring-2 ring-zinc-700/80"
+                className="h-2 w-2 shrink-0 rounded-full bg-kumo-line ring-2 ring-kumo-hairline"
                 aria-hidden="true"
               />
               <span
@@ -388,7 +424,7 @@ projectsRoute.get("/:projectId", async (c) => {
             <span id="wana-update-badge" className="hidden" />
           </div>
           <span id="wana-issues-count" className="text-xs tabular-nums text-kumo-subtle">
-            {issueRows.length > 0 ? `${issueRows.length} issues` : ""}
+            {streamRows.length > 0 ? `${streamRows.length} issues` : ""}
           </span>
         </div>
 
@@ -397,14 +433,14 @@ projectsRoute.get("/:projectId", async (c) => {
             {emptyKind ? (
               <IssueStreamEmpty filter={streamFilter} kind={emptyKind} />
             ) : (
-              <IssueStreamTable projectId={projectId} rows={issueRows} />
+              <IssueStreamTable projectId={projectId} rows={streamRows} />
             )}
           </div>
         </Card>
       </section>
       <script
         defer
-        src={`/p/${encodeURIComponent(projectId)}/live.js?q=${encodeURIComponent(streamQueryParam)}`}
+        src={`/p/${encodeURIComponent(projectId)}/live.js?q=${encodeURIComponent(streamQueryParam)}&search=${encodeURIComponent(search)}`}
       />
     </Shell>,
     { title: `${project.name} — Wana` }
@@ -487,8 +523,11 @@ projectsRoute.get("/:projectId/settings", async (c) => {
 
       {issuedKey ? (
         <Card className="mb-6 p-5">
-          <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
-            新しい API キー（この画面でのみ表示）
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
+              新しい API キー（この画面でのみ表示）
+            </div>
+            <CopyButton value={issuedKey} label="API キーをコピー" />
           </div>
           <code className="mt-2 block break-all rounded-md bg-kumo-recessed p-3 font-mono text-sm text-kumo-default">
             {issuedKey}

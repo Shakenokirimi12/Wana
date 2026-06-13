@@ -19,14 +19,69 @@ const SIMPLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export async function getUserDisplayById(
   d1: D1Database,
   userId: string
-): Promise<{ name: string; email: string } | null> {
+): Promise<{ name: string; email: string; username: string | null } | null> {
   const db = createDb(d1);
   const rows = await db
-    .select({ name: users.name, email: users.email })
+    .select({ name: users.name, email: users.email, username: users.username })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/** Update the current user's display name. */
+export async function updateUserDisplayName(
+  d1: D1Database,
+  userId: string,
+  name: string
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("名前を入力してください");
+  const db = createDb(d1);
+  await db
+    .update(users)
+    .set({ name: trimmed.slice(0, 80) })
+    .where(eq(users.id, userId));
+}
+
+/** Passkeys registered to a user (account settings). */
+export async function listWebAuthnCredentialsForUser(
+  d1: D1Database,
+  userId: string
+) {
+  const db = createDb(d1);
+  return db
+    .select({
+      credentialId: webauthnCredentials.credentialId,
+      createdAt: webauthnCredentials.createdAt,
+      transports: webauthnCredentials.transports,
+    })
+    .from(webauthnCredentials)
+    .where(eq(webauthnCredentials.userId, userId))
+    .orderBy(webauthnCredentials.createdAt);
+}
+
+/** Remove a passkey — refuses to delete the user's last credential (lockout). */
+export async function deleteWebAuthnCredential(
+  d1: D1Database,
+  userId: string,
+  credentialId: string
+): Promise<void> {
+  const creds = await listWebAuthnCredentialIdsForUser(d1, userId);
+  if (creds.length <= 1) {
+    throw new Error(
+      "最後のパスキーは削除できません（ロックアウト防止）。先に別のパスキーを追加してください。"
+    );
+  }
+  const db = createDb(d1);
+  await db
+    .delete(webauthnCredentials)
+    .where(
+      and(
+        eq(webauthnCredentials.userId, userId),
+        eq(webauthnCredentials.credentialId, credentialId)
+      )
+    );
 }
 
 export async function getUserByEmail(

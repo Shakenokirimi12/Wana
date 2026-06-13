@@ -20,6 +20,7 @@ import {
   TextLink,
 } from "@/ui/components";
 import { Shell } from "@/ui/shell";
+import CopyButton from "@/islands/copy-button";
 
 export default createRoute(async (c) => {
   const uid = getDashboardUserId(c);
@@ -144,10 +145,11 @@ export const POST = createRoute(async (c) => {
 
         <div className="space-y-6">
           <Card className="overflow-hidden">
-            <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+            <div className="flex items-center justify-between gap-3 border-b border-kumo-hairline px-5 py-3 sm:px-6">
               <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
                 Public key
               </div>
+              <CopyButton value={result.plainKey} label="Public key をコピー" />
             </div>
             <pre className="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-kumo-default sm:p-6">
               {result.plainKey}
@@ -155,10 +157,11 @@ export const POST = createRoute(async (c) => {
           </Card>
 
           <Card className="overflow-hidden">
-            <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+            <div className="flex items-center justify-between gap-3 border-b border-kumo-hairline px-5 py-3 sm:px-6">
               <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
                 DSN（ingest ホストを置換）
               </div>
+              <CopyButton value={dsn} label="DSN をコピー" />
             </div>
             <pre className="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-kumo-default sm:p-6">
               {dsn}

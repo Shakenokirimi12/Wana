@@ -4,6 +4,7 @@ import {
   organizationMembers,
   projects,
   apiKeys,
+  auditEvents,
 } from "@wana/schema/control-plane";
 import {
   apiKeyHint,
@@ -256,6 +257,13 @@ export async function deleteProject(
     throw new Error("プロジェクトが見つかりません");
   }
   await db.delete(apiKeys).where(eq(apiKeys.projectId, projectId));
+  // Detach audit rows that reference this project (FK) — keep the history under
+  // the org, with the project id preserved in their payload, but null the FK
+  // column so the project row can be deleted.
+  await db
+    .update(auditEvents)
+    .set({ projectId: null })
+    .where(eq(auditEvents.projectId, projectId));
   await db.delete(projects).where(eq(projects.id, projectId));
   // projectId left null on the audit row: the project FK target is now gone.
   await recordAuditEvent(d1, {

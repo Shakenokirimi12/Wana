@@ -96,6 +96,14 @@ export function Shell(props: ShellProps) {
             {auth === "signed-in" ? (
               <a
                 className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                href="/settings/account"
+              >
+                Account
+              </a>
+            ) : null}
+            {auth === "signed-in" ? (
+              <a
+                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
                 href="/logout"
               >
                 Sign out

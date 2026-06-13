@@ -29,7 +29,7 @@ import {
   putWebAuthnChallenge,
   takeWebAuthnChallenge,
 } from "./challenge-kv.js";
-import { createDashboardSession } from "./session.js";
+import { createDashboardSession, getSessionUserId } from "./session.js";
 import {
   webauthnExpectedOrigins,
   webauthnExpectedRpIds,
@@ -171,13 +171,21 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         inviteToken,
         email
       ));
-    if (!enrollment && !inviteOk && !openSignup) {
+    const sessionUserId = await getSessionUserId(c);
+    const baseAllow = enrollment || inviteOk || openSignup;
+    if (!baseAllow && !sessionUserId) {
       return c.json({ error: "enrollment_disabled" }, 403);
     }
 
     const user = await getUserByEmail(c.env.DB_CONTROL, email);
     if (!user) {
       return c.json({ error: "unknown_email" }, 404);
+    }
+
+    // A logged-in user may add a passkey to their OWN account.
+    const authedSelf = !!sessionUserId && sessionUserId === user.id;
+    if (!baseAllow && !authedSelf) {
+      return c.json({ error: "enrollment_disabled" }, 403);
     }
 
     const rpID = webauthnRpId(c.req.url, c.env);
@@ -252,13 +260,20 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         inviteToken,
         email
       ));
-    if (!enrollment && !inviteOk && !openSignup) {
+    const sessionUserId = await getSessionUserId(c);
+    const baseAllow = enrollment || inviteOk || openSignup;
+    if (!baseAllow && !sessionUserId) {
       return c.json({ error: "enrollment_disabled" }, 403);
     }
 
     const user = await getUserByEmail(c.env.DB_CONTROL, email);
     if (!user) {
       return c.json({ error: "unknown_email" }, 404);
+    }
+
+    const authedSelf = !!sessionUserId && sessionUserId === user.id;
+    if (!baseAllow && !authedSelf) {
+      return c.json({ error: "enrollment_disabled" }, 403);
     }
 
     if (openSignup) {
