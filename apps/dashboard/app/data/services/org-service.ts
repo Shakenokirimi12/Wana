@@ -7,6 +7,7 @@ import {
 } from "@wana/schema/control-plane";
 import { normalizeOrgSlug } from "@wana/core";
 import { createDb } from "./db-client";
+import { recordAuditEvent } from "./audit-service";
 
 export type OrgRole = "owner" | "admin" | "member";
 
@@ -114,6 +115,118 @@ export async function listOrganizationMembersWithProfiles(
     .innerJoin(users, eq(organizationMembers.userId, users.id))
     .where(eq(organizationMembers.orgId, orgId))
     .orderBy(asc(users.name));
+}
+
+/** Change a member's role between member/admin (admin+; owners managed via transfer). */
+export async function setMemberRole(
+  d1: D1Database,
+  input: {
+    orgId: string;
+    actorUserId: string;
+    targetUserId: string;
+    role: "admin" | "member";
+  }
+): Promise<void> {
+  const actor = await getOrgMembership(d1, input.actorUserId, input.orgId);
+  if (!actor || !orgRoleAtLeast(actor, "admin")) {
+    throw new Error("メンバーのロール変更には admin 以上が必要です");
+  }
+  const target = await getOrgMembership(d1, input.targetUserId, input.orgId);
+  if (!target) throw new Error("対象はこのチームのメンバーではありません");
+  if (target === "owner") {
+    throw new Error(
+      "オーナーのロールはここで変更できません（オーナー移譲を使ってください）"
+    );
+  }
+  const db = createDb(d1);
+  await db
+    .update(organizationMembers)
+    .set({ role: input.role })
+    .where(
+      and(
+        eq(organizationMembers.orgId, input.orgId),
+        eq(organizationMembers.userId, input.targetUserId)
+      )
+    );
+  await recordAuditEvent(d1, {
+    actorUserId: input.actorUserId,
+    orgId: input.orgId,
+    action: "member.role_change",
+    payload: { targetUserId: input.targetUserId, role: input.role },
+  });
+}
+
+/** Remove a member from an org (admin+; owners cannot be removed). */
+export async function removeMember(
+  d1: D1Database,
+  input: { orgId: string; actorUserId: string; targetUserId: string }
+): Promise<void> {
+  const actor = await getOrgMembership(d1, input.actorUserId, input.orgId);
+  if (!actor || !orgRoleAtLeast(actor, "admin")) {
+    throw new Error("メンバーの削除には admin 以上が必要です");
+  }
+  const target = await getOrgMembership(d1, input.targetUserId, input.orgId);
+  if (!target) return;
+  if (target === "owner") {
+    throw new Error("オーナーは削除できません（先にオーナーを移譲してください）");
+  }
+  const db = createDb(d1);
+  await db
+    .delete(organizationMembers)
+    .where(
+      and(
+        eq(organizationMembers.orgId, input.orgId),
+        eq(organizationMembers.userId, input.targetUserId)
+      )
+    );
+  await recordAuditEvent(d1, {
+    actorUserId: input.actorUserId,
+    orgId: input.orgId,
+    action: "member.remove",
+    payload: { targetUserId: input.targetUserId },
+  });
+}
+
+/** Transfer ownership: actor (owner) demotes to admin, target becomes owner. */
+export async function transferOwnership(
+  d1: D1Database,
+  input: { orgId: string; actorUserId: string; targetUserId: string }
+): Promise<void> {
+  const actor = await getOrgMembership(d1, input.actorUserId, input.orgId);
+  if (actor !== "owner") {
+    throw new Error("オーナー移譲はオーナーのみ実行できます");
+  }
+  if (input.targetUserId === input.actorUserId) {
+    throw new Error("自分自身には移譲できません");
+  }
+  const target = await getOrgMembership(d1, input.targetUserId, input.orgId);
+  if (!target) throw new Error("対象はこのチームのメンバーではありません");
+
+  const db = createDb(d1);
+  await db
+    .update(organizationMembers)
+    .set({ role: "owner" })
+    .where(
+      and(
+        eq(organizationMembers.orgId, input.orgId),
+        eq(organizationMembers.userId, input.targetUserId)
+      )
+    );
+  await db
+    .update(organizationMembers)
+    .set({ role: "admin" })
+    .where(
+      and(
+        eq(organizationMembers.orgId, input.orgId),
+        eq(organizationMembers.userId, input.actorUserId)
+      )
+    );
+  await recordAuditEvent(d1, {
+    actorUserId: input.actorUserId,
+    orgId: input.orgId,
+    action: "member.transfer_ownership",
+    payload: { targetUserId: input.targetUserId },
+  });
 }
 
 export async function listOrganizationsForUser(

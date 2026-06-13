@@ -12,7 +12,22 @@ import {
 } from "@wana/core";
 import { createDb } from "./db-client";
 import { getOrgMembership, orgRoleAtLeast, type OrgRole } from "./org-service";
+import { recordAuditEvent } from "./audit-service";
 import type { Env } from "../../types/bindings";
+
+/** Resolve a project's owning org id (for audit scoping), or null. */
+async function getProjectOrgId(
+  d1: D1Database,
+  projectId: string
+): Promise<string | null> {
+  const db = createDb(d1);
+  const rows = await db
+    .select({ orgId: projects.orgId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  return rows[0]?.orgId ?? null;
+}
 
 const PROJECT_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}[a-zA-Z0-9]$/;
 
@@ -181,6 +196,13 @@ export async function issueApiKeyForProject(
     isActive: true,
     createdAt: new Date(),
   });
+  await recordAuditEvent(d1, {
+    actorUserId: actingUserId,
+    orgId: await getProjectOrgId(d1, projectId),
+    projectId,
+    action: "apikey.issue",
+    payload: { hint },
+  });
   return { plainKey, hint };
 }
 
@@ -201,6 +223,13 @@ export async function setApiKeyActive(
     .update(apiKeys)
     .set({ isActive })
     .where(and(eq(apiKeys.id, keyId), eq(apiKeys.projectId, projectId)));
+  await recordAuditEvent(d1, {
+    actorUserId: actingUserId,
+    orgId: await getProjectOrgId(d1, projectId),
+    projectId,
+    action: isActive ? "apikey.restore" : "apikey.revoke",
+    payload: { keyId },
+  });
 }
 
 /**
@@ -219,7 +248,7 @@ export async function deleteProject(
   }
   const db = createDb(d1);
   const rows = await db
-    .select({ doId: projects.doId })
+    .select({ doId: projects.doId, orgId: projects.orgId })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -228,6 +257,13 @@ export async function deleteProject(
   }
   await db.delete(apiKeys).where(eq(apiKeys.projectId, projectId));
   await db.delete(projects).where(eq(projects.id, projectId));
+  // projectId left null on the audit row: the project FK target is now gone.
+  await recordAuditEvent(d1, {
+    actorUserId: actingUserId,
+    orgId: rows[0].orgId,
+    action: "project.delete",
+    payload: { projectId },
+  });
   return { doId: rows[0].doId };
 }
 

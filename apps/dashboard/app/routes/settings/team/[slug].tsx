@@ -10,6 +10,10 @@ import {
   revokeOrganizationInvite,
   updateOrganizationDisplayName,
   updateOrganizationSlugWithRedirect,
+  setMemberRole,
+  removeMember,
+  transferOwnership,
+  listAuditEventsForOrg,
 } from "@/data/control-plane";
 import { sendTransactionalEmail } from "@/lib/email";
 import {
@@ -99,6 +103,11 @@ export default createRoute(async (c) => {
   const invites = canAdmin
     ? await listPendingInvitesForOrg(c.env.DB_CONTROL, resolved.orgId)
     : [];
+  const auditLog = canAdmin
+    ? await listAuditEventsForOrg(c.env.DB_CONTROL, resolved.orgId, 30)
+    : [];
+  const isOwner = role === "owner";
+  const redirectBase = `/settings/team/${encodeURIComponent(resolved.slug)}`;
 
   return c.render(
     <Shell
@@ -235,26 +244,77 @@ export default createRoute(async (c) => {
                 <th className="px-3 py-3 font-medium">メール</th>
                 <th className="px-3 py-3 font-medium">ユーザー名</th>
                 <th className="px-5 py-3 font-medium sm:px-6">ロール</th>
+                {canAdmin ? (
+                  <th className="px-5 py-3 font-medium sm:px-6">操作</th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="text-kumo-default">
-              {members.map((m) => (
-                <tr
-                  key={m.userId}
-                  className="border-b border-kumo-hairline last:border-0"
-                >
-                  <td className="px-5 py-3 sm:px-6">
-                    <span className="font-medium text-kumo-default">{m.name}</span>
-                  </td>
-                  <td className="px-3 py-3 text-kumo-subtle">{m.email}</td>
-                  <td className="px-3 py-3 font-mono text-xs text-kumo-subtle">
-                    {m.username ?? "—"}
-                  </td>
-                  <td className="px-5 py-3 sm:px-6">
-                    <Badge variant={roleBadgeVariant(m.role)}>{m.role}</Badge>
-                  </td>
-                </tr>
-              ))}
+              {members.map((m) => {
+                const isSelf = m.userId === userId;
+                const targetOwner = m.role === "owner";
+                return (
+                  <tr
+                    key={m.userId}
+                    className="border-b border-kumo-hairline last:border-0"
+                  >
+                    <td className="px-5 py-3 sm:px-6">
+                      <span className="font-medium text-kumo-default">
+                        {m.name}
+                        {isSelf ? (
+                          <span className="ml-1 text-xs text-kumo-subtle">
+                            (you)
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-kumo-subtle">{m.email}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-kumo-subtle">
+                      {m.username ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 sm:px-6">
+                      <Badge variant={roleBadgeVariant(m.role)}>{m.role}</Badge>
+                    </td>
+                    {canAdmin ? (
+                      <td className="px-5 py-3 sm:px-6">
+                        {targetOwner || isSelf ? (
+                          <span className="text-xs text-kumo-subtle">—</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <form method="post" action={redirectBase} className="flex items-center gap-1">
+                              <input type="hidden" name="action" value="set_member_role" />
+                              <input type="hidden" name="target_user_id" value={m.userId} />
+                              <select
+                                name="role"
+                                defaultValue={m.role}
+                                className="h-8 rounded-md border border-kumo-hairline bg-kumo-base px-2 text-xs text-kumo-default"
+                              >
+                                <option value="member">member</option>
+                                <option value="admin">admin</option>
+                              </select>
+                              <ButtonSecondary type="submit">変更</ButtonSecondary>
+                            </form>
+                            <form method="post" action={redirectBase}>
+                              <input type="hidden" name="action" value="remove_member" />
+                              <input type="hidden" name="target_user_id" value={m.userId} />
+                              <ButtonDestructiveOutline type="submit">削除</ButtonDestructiveOutline>
+                            </form>
+                            {isOwner ? (
+                              <form method="post" action={redirectBase}>
+                                <input type="hidden" name="action" value="transfer_ownership" />
+                                <input type="hidden" name="target_user_id" value={m.userId} />
+                                <ButtonDestructiveOutline type="submit">
+                                  オーナー移譲
+                                </ButtonDestructiveOutline>
+                              </form>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -301,6 +361,29 @@ export default createRoute(async (c) => {
                     取り消し
                   </ButtonDestructiveOutline>
                 </form>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {canAdmin && auditLog.length > 0 ? (
+        <Card className="mt-8 max-w-3xl overflow-hidden">
+          <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
+              監査ログ（最近 30 件）
+            </h2>
+          </div>
+          <ul className="divide-y divide-kumo-hairline text-sm">
+            {auditLog.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 sm:px-6">
+                <span className="font-mono text-[11px] tabular-nums text-kumo-subtle">
+                  {a.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                </span>
+                <Badge variant="zinc">{a.action}</Badge>
+                <span className="truncate font-mono text-xs text-kumo-subtle">
+                  {a.payloadJson ?? ""}
+                </span>
               </li>
             ))}
           </ul>
@@ -366,6 +449,53 @@ export const POST = createRoute(async (c) => {
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "保存に失敗しました";
+      return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  if (action === "set_member_role") {
+    const targetUserId = String(body.target_user_id ?? "");
+    const newRole = body.role === "admin" ? "admin" : "member";
+    try {
+      await setMemberRole(c.env.DB_CONTROL, {
+        orgId: resolved.orgId,
+        actorUserId: userId,
+        targetUserId,
+        role: newRole,
+      });
+      return c.redirect(`${redirectBase}?ok=1`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "変更に失敗しました";
+      return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  if (action === "remove_member") {
+    const targetUserId = String(body.target_user_id ?? "");
+    try {
+      await removeMember(c.env.DB_CONTROL, {
+        orgId: resolved.orgId,
+        actorUserId: userId,
+        targetUserId,
+      });
+      return c.redirect(`${redirectBase}?ok=1`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "削除に失敗しました";
+      return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  if (action === "transfer_ownership") {
+    const targetUserId = String(body.target_user_id ?? "");
+    try {
+      await transferOwnership(c.env.DB_CONTROL, {
+        orgId: resolved.orgId,
+        actorUserId: userId,
+        targetUserId,
+      });
+      return c.redirect(`${redirectBase}?ok=1`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "移譲に失敗しました";
       return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
     }
   }
