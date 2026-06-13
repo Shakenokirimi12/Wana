@@ -40,11 +40,11 @@
     "WEBAUTHN_RP_NAME": "Wana",
     "WEBAUTHN_RP_ID": "wana.shakenokiri.me",
     "WEBAUTHN_ORIGIN": "https://wana.shakenokiri.me",
-    // Temporarily enabled so the brand domain can register a fresh passkey
-    // (RP id changed from wana-dashboard.pages.dev → wana.shakenokiri.me so
-    // existing credentials no longer validate). Revert to "false" after the
-    // owner has re-enrolled on the new domain.
-    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true",
+    // Off in production: passkey enrollment goes through invite tokens or the
+    // authed-self path (a logged-in user adding a passkey to their own
+    // account). Open email-only enrollment was a one-off for the
+    // brand-domain migration.
+    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "false",
     "ALLOW_OPEN_SIGNUP": "true"
   },
   "durable_objects": {
