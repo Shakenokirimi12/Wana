@@ -543,12 +543,19 @@ export const POST = createRoute(async (c) => {
       const origin = new URL(c.req.url).origin;
       const inviteUrl = `${origin}/invite/${encodeURIComponent(plainToken)}`;
 
+      let emailNote: { ok: boolean; text: string } | null = null;
       if (channel === "email" && invitedEmail) {
-        await sendTransactionalEmail(c.env, {
+        const res = await sendTransactionalEmail(c.env, {
           to: invitedEmail,
           subject: `${resolved.name} からの Wana 招待`,
           text: `次のリンクから参加できます（期限内・回数制限あり）:\n${inviteUrl}\n`,
         });
+        emailNote = res.ok
+          ? { ok: true, text: `${invitedEmail} 宛にメールを送信しました。` }
+          : {
+              ok: false,
+              text: `メール送信は行われませんでした（${res.error ?? "未設定"}）。上の URL を手動で共有してください。`,
+            };
       }
 
       return c.render(
@@ -561,9 +568,13 @@ export const POST = createRoute(async (c) => {
             <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-kumo-hairline bg-kumo-recessed p-4 font-mono text-sm text-amber-100/90">
               {inviteUrl}
             </pre>
-            <p className="text-xs text-kumo-subtle">
-              メールチャネルかつ SMTP 設定済みの場合、宛先へも送信済みです。
-            </p>
+            {emailNote ? (
+              <p
+                className={`text-xs ${emailNote.ok ? "text-emerald-400" : "text-amber-400"}`}
+              >
+                {emailNote.text}
+              </p>
+            ) : null}
             <TextLink href={redirectBase}>← チーム設定へ</TextLink>
           </Card>
         </Shell>,

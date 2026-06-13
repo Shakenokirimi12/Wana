@@ -4,6 +4,9 @@
   "compatibility_date": "2026-05-02",
   "pages_build_output_dir": "./dist",
   "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
   // SYSTEM_CONFIG KV id is synced from apps/worker — run `pnpm provision:system-config-kv` once
   "kv_namespaces": [
     {

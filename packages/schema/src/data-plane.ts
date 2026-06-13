@@ -19,7 +19,13 @@ export const issues = sqliteTable(
     firstSeen: integer("first_seen", { mode: "timestamp_ms" }).notNull(),
     lastSeen: integer("last_seen", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("idx_issues_fingerprint").on(table.fingerprint)]
+  (table) => [
+    index("idx_issues_fingerprint").on(table.fingerprint),
+    // Match the data-plane migration (idx_issues_status / idx_issues_last_seen)
+    // so drizzle-kit generate won't show drift / propose dropping them.
+    index("idx_issues_status").on(table.status),
+    index("idx_issues_last_seen").on(table.lastSeen),
+  ]
 );
 
 export const events = sqliteTable(
