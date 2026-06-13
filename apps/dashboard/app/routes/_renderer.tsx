@@ -8,8 +8,17 @@ export default reactRenderer(({ children, title, c }) => {
       <head>
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#09090b" />
-        <meta name="color-scheme" content="dark" />
+        <meta
+          name="theme-color"
+          content="#ffffff"
+          media="(prefers-color-scheme: light)"
+        />
+        <meta
+          name="theme-color"
+          content="#0a0a0a"
+          media="(prefers-color-scheme: dark)"
+        />
+        <meta name="color-scheme" content="light dark" />
         {title ? <title>{title}</title> : <title>Wana</title>}
         {import.meta.env.PROD ? (
           <>
@@ -33,7 +42,7 @@ export default reactRenderer(({ children, title, c }) => {
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen font-sans text-zinc-100">
+      <body className="min-h-screen bg-kumo-canvas font-sans text-kumo-default">
         {maintenance ? (
           <div className="flex items-center justify-center gap-2 border-b border-amber-500/20 bg-gradient-to-r from-amber-950/95 via-amber-900/90 to-amber-950/95 px-4 py-3 text-center text-sm text-amber-100">
             <span
