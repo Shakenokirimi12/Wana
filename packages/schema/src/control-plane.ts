@@ -141,3 +141,92 @@ export const auditEvents = sqliteTable(
     index("idx_audit_events_org").on(t.orgId),
   ]
 );
+
+// ─── Notifications (P1: webhook only) ───────────────────────────────────────
+
+export const notificationEndpoints = sqliteTable(
+  "notification_endpoints",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").notNull().default("webhook"),
+    target: text("target").notNull(),
+    secretEnc: text("secret_enc").notNull(),
+    secretNonce: text("secret_nonce").notNull(),
+    secretHint: text("secret_hint").notNull(),
+    kekVersion: integer("kek_version").notNull().default(1),
+    configJson: text("config_json"),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdByUserId: text("created_by_user_id"),
+  },
+  (t) => [index("idx_notif_ep_project").on(t.projectId)]
+);
+
+export const notificationRules = sqliteTable(
+  "notification_rules",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    endpointId: text("endpoint_id")
+      .notNull()
+      .references(() => notificationEndpoints.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    onIssueCreated: integer("on_issue_created", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    onIssueResolved: integer("on_issue_resolved", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    onIssueRegressed: integer("on_issue_regressed", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    onSpike: integer("on_spike", { mode: "boolean" }).notNull().default(false),
+    filterQuery: text("filter_query"),
+    minIntervalSeconds: integer("min_interval_seconds").notNull().default(60),
+    lastFiredAt: integer("last_fired_at", { mode: "timestamp_ms" }),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdByUserId: text("created_by_user_id"),
+  },
+  (t) => [
+    index("idx_notif_rule_project").on(t.projectId),
+    index("idx_notif_rule_endpoint").on(t.endpointId),
+    index("idx_notif_rule_project_active").on(t.projectId, t.isActive),
+  ]
+);
+
+// SET NULL on rule/endpoint delete so the audit history survives.
+export const notificationDeliveries = sqliteTable(
+  "notification_deliveries",
+  {
+    id: text("id").primaryKey(),
+    ruleId: text("rule_id").references(() => notificationRules.id, {
+      onDelete: "set null",
+    }),
+    endpointId: text("endpoint_id").references(
+      () => notificationEndpoints.id,
+      { onDelete: "set null" }
+    ),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    issueId: text("issue_id"),
+    eventKind: text("event_kind").notNull(),
+    status: text("status").notNull(),
+    attempt: integer("attempt").notNull().default(1),
+    responseStatus: integer("response_status"),
+    responseMs: integer("response_ms"),
+    errorMessage: text("error_message"),
+    payloadPreview: text("payload_preview"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
+  },
+  (t) => [index("idx_notif_del_project_created").on(t.projectId, t.createdAt)]
+);

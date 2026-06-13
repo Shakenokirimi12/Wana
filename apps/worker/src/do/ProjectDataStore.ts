@@ -7,6 +7,7 @@ import migrations from "@wana/schema/data-plane-migrations";
 import type { ParsedEnvelope, IssueStatus } from "@wana/types";
 import type { Env } from "../types";
 import { parseEventFromEnvelope, type ExtractedEventMetadata } from "../lib/event-parser";
+import { dispatchIssueCreated } from "../notifications/dispatch";
 
 interface EventInput {
   envelope: ParsedEnvelope;
@@ -100,7 +101,21 @@ export class ProjectDataStore extends DurableObject<Env> {
     }
   }
 
-  async insertEvents(eventInputs: EventInput[]): Promise<void> {
+  async insertEvents(eventInputs: EventInput[], projectId?: string): Promise<void> {
+    // Issues that were freshly created in this batch — pushed to the webhook
+    // dispatcher AFTER all DB writes settle, via ctx.waitUntil (so ingest
+    // latency is unaffected and a misconfigured endpoint can't 5xx its way
+    // into a queue redelivery loop).
+    const newIssuesForDispatch: Array<{
+      id: string;
+      type: string;
+      value: string;
+      culprit: string | null;
+      fingerprint: string;
+      firstSeenMs: number;
+      lastSeenMs: number;
+      tags: Record<string, string>;
+    }> = [];
     const parsedItems = eventInputs
       .map((e) => ({
         meta: parseEventFromEnvelope(e.envelope, e.receivedAt),
@@ -216,6 +231,21 @@ export class ProjectDataStore extends DurableObject<Env> {
             firstSeen: sql`min(${issues.firstSeen}, ${earliestItem.meta.timestamp.getTime()})`,
           })
           .where(eq(issues.id, issueId));
+
+        // Capture a snapshot for the notifications dispatcher — only when the
+        // issue was BORN in this batch and we kept at least one event row.
+        if (issueIsNew) {
+          newIssuesForDispatch.push({
+            id: issueId,
+            type: latestItem.meta.type,
+            value: latestItem.meta.value,
+            culprit: latestItem.meta.culprit,
+            fingerprint,
+            firstSeenMs: earliestItem.meta.timestamp.getTime(),
+            lastSeenMs: latestItem.meta.timestamp.getTime(),
+            tags: latestItem.meta.tags,
+          });
+        }
       } else if (issueIsNew) {
         // Every event in a brand-new issue was a duplicate (re-delivery after a
         // mid-batch crash). Drop the empty issue row to avoid a count=0 orphan.
@@ -230,6 +260,33 @@ export class ProjectDataStore extends DurableObject<Env> {
     }
 
     this.ctx.waitUntil(this.broadcastIssuesSnapshot());
+
+    // Notifications dispatch — runs after the response. We skip if the caller
+    // didn't pass a projectId (legacy callers), and the dispatcher itself
+    // bails when WEBHOOK_KEK_V1 is unset, so this never blocks ingest.
+    if (projectId && newIssuesForDispatch.length > 0) {
+      for (const issueSnap of newIssuesForDispatch) {
+        this.ctx.waitUntil(
+          dispatchIssueCreated(
+            this.workerEnv,
+            projectId,
+            {
+              id: issueSnap.id,
+              type: issueSnap.type,
+              value: issueSnap.value,
+              culprit: issueSnap.culprit,
+              fingerprint: issueSnap.fingerprint,
+              status: "unresolved",
+              firstSeen: issueSnap.firstSeenMs,
+              lastSeen: issueSnap.lastSeenMs,
+            },
+            issueSnap.tags
+          ).catch((e) => {
+            console.error("dispatchIssueCreated failed:", e);
+          })
+        );
+      }
+    }
   }
 
   // RPC methods for dashboard

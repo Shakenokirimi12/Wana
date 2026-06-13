@@ -94,10 +94,14 @@ export default {
 
         if (ready.length === 0) return;
 
+        // All messages in this group share the same doId, and the DO is keyed
+        // off projectId, so the first message's projectId is the group's.
+        const groupProjectId = messages[0]?.body.projectId;
+
         try {
           // insertEvents is idempotent (ON CONFLICT DO NOTHING), so retrying the
           // whole group on failure is safe — no double counting.
-          await doStub.insertEvents(ready.map((r) => r.event));
+          await doStub.insertEvents(ready.map((r) => r.event), groupProjectId);
           for (const r of ready) r.msg.ack();
         } catch (error) {
           console.error(`insertEvents failed for DO ${doId}, will retry:`, error);

@@ -613,6 +613,16 @@ projectsRoute.get("/:projectId/settings", async (c) => {
       <PageHeader
         title="Project settings"
         description={`${project.name}（${project.orgName}）の API キーと削除。`}
+        actions={
+          isAdmin ? (
+            <a
+              className="rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 py-1.5 text-xs font-medium text-kumo-default hover:border-kumo-line hover:bg-kumo-base"
+              href={`/p/${encodeURIComponent(projectId)}/notifications`}
+            >
+              通知を設定 →
+            </a>
+          ) : undefined
+        }
       />
 
       {err ? (
@@ -1022,5 +1032,9 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
     { title: `${issue.value} — Wana` }
   );
 });
+
+// Mount notifications sub-routes (own file to keep this one from growing more).
+import { notificationsRoute } from "./notifications";
+projectsRoute.route("/", notificationsRoute);
 
 export default projectsRoute;

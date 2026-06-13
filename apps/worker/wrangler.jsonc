@@ -34,6 +34,19 @@
 			"bucket_name": "wana-payloads"
 		}
 	],
+	// Control-plane D1 — needed by the notifications dispatcher so the DO can
+	// read endpoint/rule rows when an issue is created.
+	"d1_databases": [
+		{
+			"binding": "DB_CONTROL",
+			"database_name": "wana-control-plane",
+			"database_id": "22092b33-3345-4efe-b9d3-298ba9c47bb0",
+			"migrations_dir": "../../packages/schema/migrations"
+		}
+	],
+	"vars": {
+		"DASHBOARD_PUBLIC_URL": "https://wana.shakenokiri.me"
+	},
 	// Queue consumer for processing errors
 	"queues": {
 		"consumers": [

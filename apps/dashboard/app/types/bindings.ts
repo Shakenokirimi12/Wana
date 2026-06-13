@@ -52,4 +52,11 @@ export type Env = {
    * When absent, the dashboard runs the same handlers in-process via `@wana/auth-plugin-handlers`.
    */
   AUTH_PLUGIN?: Fetcher;
+
+  /**
+   * KEK (base64 32 bytes) for decrypting webhook secrets when the dashboard
+   * fires a TEST send. Production deliveries originate in wana-worker; this
+   * is only for operator-initiated tests from the Notifications UI.
+   */
+  WEBHOOK_KEK_V1?: string;
 };

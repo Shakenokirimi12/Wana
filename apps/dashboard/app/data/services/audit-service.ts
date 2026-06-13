@@ -17,7 +17,14 @@ export type AuditAction =
   | "project.delete"
   | "apikey.issue"
   | "apikey.revoke"
-  | "apikey.restore";
+  | "apikey.restore"
+  | "notification.endpoint.create"
+  | "notification.endpoint.update"
+  | "notification.endpoint.delete"
+  | "notification.endpoint.rotate_secret"
+  | "notification.rule.create"
+  | "notification.rule.update"
+  | "notification.rule.delete";
 
 export interface AuditInput {
   actorUserId?: string | null;
