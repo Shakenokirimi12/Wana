@@ -2,10 +2,8 @@ import { createRoute } from "honox/factory";
 
 import {
   getDashboardUserId,
-  isDashboardDevFallback,
   isOpenSignupEnabled,
   isWebAuthnEmailEnrollmentEnabled,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import {
   ButtonPrimary,
@@ -29,13 +27,11 @@ export default createRoute(async (c) => {
   if (uid) {
     return c.redirect(next ?? "/");
   }
-  const pg = playgroundHref(c.env);
-  const devFb = isDashboardDevFallback(c.env, c);
   const enrollment = isWebAuthnEmailEnrollmentEnabled(c.env);
   const nextAttr = next ?? "/";
 
   return c.render(
-    <Shell title="Sign in" playgroundUrl={pg} auth="hidden">
+    <Shell title="Sign in" auth="hidden">
       <PageHeader
         title="ログイン"
         description="メールアドレスを入力し、パスキーでサインインします。"
@@ -76,18 +72,6 @@ export default createRoute(async (c) => {
         </div>
         <script type="module" src="/static/passkey-login.js" />
 
-        {devFb ? (
-          <div className="border-t border-kumo-hairline pt-4">
-            <p className="text-xs text-amber-200/90">
-              開発モード（dev fallback 有効）。次のボタンで D1
-              セッションを作成し、本番同等の Cookie パスを試せます。
-            </p>
-            <form method="post" action="/dev/session" className="mt-3">
-              {next ? <input type="hidden" name="next" value={next} /> : null}
-              <ButtonPrimary type="submit">Dev: セッションを作成</ButtonPrimary>
-            </form>
-          </div>
-        ) : null}
         {isOpenSignupEnabled(c.env) ? (
           <div className="border-t border-kumo-hairline pt-4 text-sm text-kumo-subtle">
             アカウントをお持ちでない方は{" "}

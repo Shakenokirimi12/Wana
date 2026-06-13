@@ -13,7 +13,7 @@ import {
 } from "@/data/control-plane";
 import { orgRoleAtLeast } from "@/data/services/org-service";
 import { durableObjectIdForStoredProject } from "@wana/core";
-import { getDashboardUserId, playgroundHref } from "@/lib/dashboard-user";
+import { getDashboardUserId } from "@/lib/dashboard-user";
 import { projectIssuesLiveScript } from "@/lib/project-issues-live";
 import {
   parseIssueStreamQuery,
@@ -139,7 +139,7 @@ function IssueStreamQueryBar(props: {
         type="search"
         name="search"
         defaultValue={props.search}
-        placeholder="issue を検索（メッセージ・型・culprit）"
+        placeholder="issue を検索（メッセージ・型・発生箇所）"
         className="h-9 min-w-[14rem] flex-1 rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 text-sm text-kumo-default placeholder:text-kumo-subtle focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
       />
       <ButtonSecondary type="submit">検索</ButtonSecondary>
@@ -214,8 +214,11 @@ function IssueStreamEmpty(props: {
     return (
       <div className="px-6 py-14 text-center">
         <p className="text-sm text-kumo-subtle">
-          No issues yet. Send events from the Sentry SDK to the ingest worker,
-          or use the Sentry browser test page linked in the footer.
+          まだ issue がありません。SDK
+          経由でエラーを送信すると、ここに表示されます。
+        </p>
+        <p className="mt-2 text-xs text-kumo-subtle">
+          設定ページから DSN を確認してください。
         </p>
       </div>
     );
@@ -223,18 +226,18 @@ function IssueStreamEmpty(props: {
 
   const label =
     props.filter.kind === "all"
-      ? "No issues in this project."
+      ? "このプロジェクトにはまだ issue がありません。"
       : props.filter.status === "unresolved"
-        ? "There are no unresolved issues."
+        ? "未解決の issue はありません。"
         : props.filter.status === "resolved"
-          ? "There are no resolved issues."
-          : "There are no ignored issues.";
+          ? "解決済みの issue はありません。"
+          : "無視中の issue はありません。";
 
   return (
     <div className="px-6 py-14 text-center">
       <p className="text-sm text-kumo-subtle">{label}</p>
       <p className="mt-2 text-xs text-kumo-subtle">
-        Adjust the tabs above or change issue status from an issue detail page.
+        上のタブを切り替えるか、issue 詳細から状態を変更してください。
       </p>
     </div>
   );
@@ -282,10 +285,9 @@ function NotFoundShell(props: {
   message: string;
   backHref: string;
   backLabel: string;
-  playgroundUrl?: string;
 }) {
   return (
-    <Shell title={props.title} playgroundUrl={props.playgroundUrl} auth="signed-in">
+    <Shell title={props.title} auth="signed-in">
       <Card className="p-8 text-center">
         <p className="text-kumo-subtle">{props.message}</p>
         <div className="mt-6">
@@ -302,7 +304,6 @@ projectsRoute.get("/:projectId", async (c) => {
   if (!uid) {
     return c.redirect("/login");
   }
-  const pg = playgroundHref(c.env);
 
   const project = await getProjectRow(c.env.DB_CONTROL, projectId);
   if (!project) {
@@ -312,7 +313,7 @@ projectsRoute.get("/:projectId", async (c) => {
         message="Project not found."
         backHref="/"
         backLabel="← All projects"
-        playgroundUrl={pg}
+
       />,
       { title: "Not found — Wana" }
     );
@@ -325,7 +326,7 @@ projectsRoute.get("/:projectId", async (c) => {
         message="Project not found."
         backHref="/"
         backLabel="← All projects"
-        playgroundUrl={pg}
+
       />,
       { title: "Not found — Wana" }
     );
@@ -365,7 +366,7 @@ projectsRoute.get("/:projectId", async (c) => {
         : null;
 
   return c.render(
-    <Shell title={project.name} playgroundUrl={pg} auth="signed-in">
+    <Shell title={project.name} auth="signed-in">
       <PageHeader
         title={project.name}
         description={
@@ -418,7 +419,7 @@ projectsRoute.get("/:projectId", async (c) => {
                 id="wana-live-label"
                 className="text-xs font-medium tabular-nums text-kumo-subtle"
               >
-                準備中…
+                接続中…
               </span>
             </div>
             <span id="wana-update-badge" className="hidden" />
@@ -481,7 +482,6 @@ projectsRoute.post("/:projectId/issues/:issueId/status", async (c) => {
 projectsRoute.get("/:projectId/settings", async (c) => {
   const projectId = c.req.param("projectId");
   const uid = getDashboardUserId(c);
-  const pg = playgroundHref(c.env);
   if (!uid) return c.redirect("/login");
 
   const project = await getProjectRow(c.env.DB_CONTROL, projectId);
@@ -492,7 +492,7 @@ projectsRoute.get("/:projectId/settings", async (c) => {
         message="Project not found."
         backHref="/"
         backLabel="← All projects"
-        playgroundUrl={pg}
+
       />,
       { title: "Not found — Wana" }
     );
@@ -506,7 +506,7 @@ projectsRoute.get("/:projectId/settings", async (c) => {
   const err = c.req.query("err") ?? null;
 
   return c.render(
-    <Shell title={`${project.name} — Settings`} playgroundUrl={pg} auth="signed-in">
+    <Shell title={`${project.name} — Settings`} auth="signed-in">
       <div className="mb-8">
         <TextLink href={`/p/${projectId}`}>← {project.name}</TextLink>
       </div>
@@ -590,7 +590,7 @@ projectsRoute.get("/:projectId/settings", async (c) => {
             Danger zone
           </h2>
           <p className="mt-2 text-sm text-kumo-subtle">
-            プロジェクトを削除すると、保存済みの全 issue・event・R2 ペイロード・API
+            プロジェクトを削除すると、保存済みの全 issue・event・ペイロード・API
             キーが
             <span className="font-semibold text-rose-400">完全に削除</span>
             され、元に戻せません。確認のためプロジェクト ID
@@ -702,7 +702,6 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
   if (!uid) {
     return c.redirect("/login");
   }
-  const pg = playgroundHref(c.env);
 
   const project = await getProjectRow(c.env.DB_CONTROL, projectId);
   if (!project) {
@@ -712,7 +711,7 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
         message="Project not found."
         backHref="/"
         backLabel="← All projects"
-        playgroundUrl={pg}
+
       />,
       { title: "Not found — Wana" }
     );
@@ -725,7 +724,7 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
         message="Project not found."
         backHref="/"
         backLabel="← All projects"
-        playgroundUrl={pg}
+
       />,
       { title: "Not found — Wana" }
     );
@@ -741,7 +740,7 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
         message="Issue not found."
         backHref={`/p/${projectId}`}
         backLabel={`← ${project.name}`}
-        playgroundUrl={pg}
+
       />,
       { title: "Not found — Wana" }
     );
@@ -763,7 +762,7 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
   const statusFormBase = `/p/${projectId}/issues/${issueId}/status`;
 
   return c.render(
-    <Shell title={issue.value} playgroundUrl={pg} auth="signed-in">
+    <Shell title={issue.value} auth="signed-in">
       <div className="mb-8">
         <TextLink href={`/p/${projectId}`}>← {project.name}</TextLink>
       </div>
@@ -779,7 +778,14 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
                 {issue.culprit ?? "—"}
               </span>
               <span className="text-kumo-subtle">|</span>
-              <span className="font-mono text-xs text-kumo-subtle">{issue.id}</span>
+              <span
+                className="font-mono text-xs text-kumo-subtle"
+                title={issue.id}
+              >
+                {issue.id.length > 12
+                  ? `${issue.id.slice(0, 8)}…${issue.id.slice(-4)}`
+                  : issue.id}
+              </span>
             </div>
           </div>
         }
@@ -857,7 +863,14 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
                   key={e.id}
                   className="grid gap-2 px-5 py-3 text-xs sm:grid-cols-[minmax(8rem,1fr)_12rem_6rem_1fr] sm:items-center sm:gap-3 sm:px-6"
                 >
-                  <span className="font-mono text-kumo-default">{e.id}</span>
+                  <span
+                    className="font-mono text-kumo-default"
+                    title={e.id}
+                  >
+                    {e.id.length > 12
+                      ? `${e.id.slice(0, 8)}…${e.id.slice(-4)}`
+                      : e.id}
+                  </span>
                   <span className="tabular-nums text-kumo-subtle">
                     {formatIssueDetailTime(new Date(e.timestamp).getTime())}
                   </span>
@@ -880,15 +893,15 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
       ) : null}
 
       <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
-        Raw JSON payload (stored object)
+        Raw JSON payload
       </h2>
       <Card className="overflow-hidden">
         {payloadPreview ? (
           <details>
             <summary className="cursor-pointer px-5 py-3 text-sm text-kumo-subtle hover:text-kumo-default sm:px-6">
               {parsedPayload
-                ? "Show raw stored JSON"
-                : "Stored JSON (could not parse as a Sentry event)"}
+                ? "保存済み JSON を表示"
+                : "保存済み JSON（イベントの解析に失敗しました）"}
             </summary>
             <pre className="max-h-112 overflow-auto border-t border-kumo-hairline p-5 font-mono text-xs leading-relaxed text-kumo-default sm:p-6">
               {payloadPreview}
@@ -896,7 +909,7 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
           </details>
         ) : (
           <p className="p-6 text-sm text-kumo-subtle">
-            No payload in R2 for the latest event (key missing or not synced).
+            最新イベントのペイロードは保存されていません。
           </p>
         )}
       </Card>

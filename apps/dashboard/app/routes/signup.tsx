@@ -4,7 +4,6 @@ import { getInviteDetailsForAccept, countUsers } from "@/data/control-plane";
 import {
   getDashboardUserId,
   isOpenSignupEnabled,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import { Card, PageHeader, TextLink } from "@/ui/components";
 import { Shell } from "@/ui/shell";
@@ -60,7 +59,6 @@ export default createRoute(async (c) => {
     return c.redirect(`/invite/${encodeURIComponent(token)}`);
   }
 
-  const pg = playgroundHref(c.env);
   const lockedEmail = details.invitedEmail?.trim() ?? "";
   const emailLocked = lockedEmail.length > 0;
   // JS 側に渡すトークン: 初回は bootstrap-token、オープンは open-signup、招待は token。
@@ -88,7 +86,7 @@ export default createRoute(async (c) => {
       : "招待を受け取り、パスキーでアカウントを作成します。既にアカウントがある場合はログインしてください。";
 
   return c.render(
-    <Shell title={isFirstUser ? "管理者登録" : "アカウント作成"} playgroundUrl={pg} auth="signed-out">
+    <Shell title={isFirstUser ? "管理者登録" : "アカウント作成"} auth="signed-out">
       <PageHeader title={headerTitle} description={headerDesc} />
       <Card className="max-w-lg space-y-4 p-6 sm:p-8">
         <div

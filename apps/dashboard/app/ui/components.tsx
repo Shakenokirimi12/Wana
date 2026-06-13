@@ -227,7 +227,7 @@ export function IssueStatusToolbar(props: {
       aria-label="Issue status actions"
     >
       <p className="text-xs leading-relaxed text-kumo-subtle">
-        現在の状態のボタンは無効化されています。他のボタンで切り替えられます。
+        現在の状態のボタンは無効です。他のボタンで切り替えてください。
       </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {opts.map((o) => {

@@ -28,15 +28,31 @@
       "bucket_name": "wana-payloads"
     }
   ],
+  // Top-level vars are the LOCAL DEV defaults (used by `pnpm preview` /
+  // `pnpm dev`). Production deploys override these via env.production below so
+  // the localhost ingest URL, dev-fallback flag, and example MAIL_FROM never
+  // ship to wana-dashboard.pages.dev.
   "vars": {
     "INGEST_PUBLIC_URL": "http://127.0.0.1:8787",
     "DASHBOARD_USER_ID": "user_01",
     "DASHBOARD_DEV_FALLBACK": "true",
     "MAIL_FROM": "noreply@example.com",
-    "SENTRY_PLAYGROUND_URL": "http://127.0.0.1:8790",
     "WEBAUTHN_RP_NAME": "Wana",
     "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true",
     "ALLOW_OPEN_SIGNUP": "true"
+  },
+  "env": {
+    "production": {
+      "vars": {
+        "INGEST_PUBLIC_URL": "https://wana-ingest.shakenokirimi12.workers.dev",
+        "DASHBOARD_USER_ID": "",
+        "DASHBOARD_DEV_FALLBACK": "false",
+        "MAIL_FROM": "noreply@example.com",
+        "WEBAUTHN_RP_NAME": "Wana",
+        "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "false",
+        "ALLOW_OPEN_SIGNUP": "true"
+      }
+    }
   },
   "durable_objects": {
     "bindings": [

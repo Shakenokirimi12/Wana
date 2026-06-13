@@ -6,7 +6,7 @@ import {
   listWebAuthnCredentialsForUser,
   deleteWebAuthnCredential,
 } from "@/data/control-plane";
-import { getDashboardUserId, playgroundHref } from "@/lib/dashboard-user";
+import { getDashboardUserId } from "@/lib/dashboard-user";
 import {
   ButtonDestructiveOutline,
   ButtonPrimary,
@@ -24,7 +24,6 @@ function shortCredId(id: string): string {
 
 export default createRoute(async (c) => {
   const uid = getDashboardUserId(c);
-  const pg = playgroundHref(c.env);
   if (!uid) return c.redirect("/login");
 
   const user = await getUserDisplayById(c.env.DB_CONTROL, uid);
@@ -34,7 +33,7 @@ export default createRoute(async (c) => {
   const ok = c.req.query("ok");
 
   return c.render(
-    <Shell title="Account settings" playgroundUrl={pg} auth="signed-in">
+    <Shell title="Account settings" auth="signed-in">
       <PageHeader
         title="アカウント設定"
         description="表示名とパスキー（ログイン用の認証器）を管理します。"

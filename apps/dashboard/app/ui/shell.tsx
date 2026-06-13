@@ -5,8 +5,6 @@ export type ShellAuth = "signed-in" | "signed-out" | "hidden";
 type ShellProps = {
   title: string;
   children: ReactNode;
-  /** Shown in footer when set (e.g. Sentry playground dev URL). */
-  playgroundUrl?: string;
   /** Active team label (Slack-style). */
   activeTeamName?: string;
   /** Optional links to switch team (GET /team/switch?id=&next=). */
@@ -158,21 +156,7 @@ export function Shell(props: ShellProps) {
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10 sm:py-12">{props.children}</main>
       <footer className="mx-auto mt-16 max-w-6xl border-t border-kumo-hairline px-6 py-8">
-        <p className="text-center text-xs text-kumo-subtle">
-          Wana — edge-native error tracking
-        </p>
-        {props.playgroundUrl ? (
-          <div className="mt-4 flex justify-center text-xs">
-            <a
-              className="font-medium text-kumo-subtle hover:text-kumo-default"
-              href={props.playgroundUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Sentry SDK テストページ (別タブ)
-            </a>
-          </div>
-        ) : null}
+        <p className="text-center text-xs text-kumo-subtle">Wana</p>
       </footer>
     </div>
   );

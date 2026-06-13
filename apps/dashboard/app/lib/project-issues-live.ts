@@ -126,24 +126,24 @@ export function projectIssuesLiveScript(
     var total = msg.issues.length;
     if (total === 0) {
       bodyEl.innerHTML =
-        '<div class="px-6 py-14 text-center"><p class="text-sm text-kumo-subtle">No issues yet. Send events from the Sentry SDK to the ingest worker, or use the Sentry browser test page linked in the footer.</p></div>';
+        '<div class="px-6 py-14 text-center"><p class="text-sm text-kumo-subtle">まだ issue がありません。SDK 経由でエラーを送信すると、ここに表示されます。</p><p class="mt-2 text-xs text-kumo-subtle">設定ページから DSN を確認してください。</p></div>';
       return;
     }
     if (n === 0) {
       var msgEmpty =
         streamQuery === "is:all"
-          ? "No issues in this project."
+          ? "このプロジェクトにはまだ issue がありません。"
           : streamQuery === "is:unresolved"
-            ? "There are no unresolved issues."
+            ? "未解決の issue はありません。"
             : streamQuery === "is:resolved"
-              ? "There are no resolved issues."
+              ? "解決済みの issue はありません。"
               : streamQuery === "is:ignored"
-                ? "There are no ignored issues."
-                : "There are no issues matching this filter.";
+                ? "無視中の issue はありません。"
+                : "条件に一致する issue はありません。";
       bodyEl.innerHTML =
         '<div class="px-6 py-14 text-center"><p class="text-sm text-kumo-subtle">' +
         esc(msgEmpty) +
-        '</p><p class="mt-2 text-xs text-kumo-subtle">Adjust the tabs above or change issue status from an issue detail page.</p></div>';
+        '</p><p class="mt-2 text-xs text-kumo-subtle">上のタブを切り替えるか、issue 詳細から状態を変更してください。</p></div>';
       return;
     }
 

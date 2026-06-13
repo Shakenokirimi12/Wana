@@ -62,7 +62,3 @@ export function ingestPublicOrigin(env: Env): string {
   return "http://127.0.0.1:8787";
 }
 
-export function playgroundHref(env: Env): string | undefined {
-  const u = env.SENTRY_PLAYGROUND_URL?.trim();
-  return u || undefined;
-}

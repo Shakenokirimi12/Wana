@@ -8,7 +8,6 @@ import {
 import {
   getActiveOrgId,
   getDashboardUserId,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import { Badge, Card, LinkPrimary, PageHeader } from "@/ui/components";
 import { Shell } from "@/ui/shell";
@@ -34,13 +33,12 @@ export default createRoute(async (c) => {
 
   const me = await getUserDisplayById(c.env.DB_CONTROL, userId);
   const activeTeam = teams.find((t) => t.id === activeOrgId);
-  const pg = playgroundHref(c.env);
   const qOk = c.req.query("ok");
 
   return c.render(
     <Shell
       title="Projects"
-      playgroundUrl={pg}
+
       activeTeamName={activeTeam?.name}
       teamSwitcher={teams.map((t) => ({
         id: t.id,
@@ -98,7 +96,7 @@ export default createRoute(async (c) => {
             <div className="max-w-sm space-y-2">
               <p className="font-medium text-kumo-default">プロジェクトがありません</p>
               <p className="text-sm text-kumo-subtle">
-                admin 以上なら新規作成できます。メンバーだけの場合は管理者に依頼してください。
+                管理者ロールがあれば新規作成できます。メンバーの場合は管理者にご依頼ください。
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3">

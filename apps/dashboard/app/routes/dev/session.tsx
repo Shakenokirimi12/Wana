@@ -18,7 +18,7 @@ export const POST = createRoute(async (c) => {
 
   const userId = c.env.DASHBOARD_USER_ID?.trim();
   if (!userId) {
-    return c.text("DASHBOARD_USER_ID is not set", 400);
+    return c.text("Bad request", 400);
   }
 
   await createDashboardSession(c, userId);

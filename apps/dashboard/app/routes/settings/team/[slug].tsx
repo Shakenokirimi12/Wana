@@ -16,11 +16,7 @@ import {
   listAuditEventsForOrg,
 } from "@/data/control-plane";
 import { sendTransactionalEmail } from "@/lib/email";
-import {
-  getDashboardUserId,
-  isDashboardDevFallback,
-  playgroundHref,
-} from "@/lib/dashboard-user";
+import { getDashboardUserId } from "@/lib/dashboard-user";
 import {
   Badge,
   ButtonDestructiveOutline,
@@ -39,10 +35,34 @@ function roleBadgeVariant(role: string): "zinc" | "amber" {
   return "zinc";
 }
 
+/** Render audit-event payload as a compact "key: value" summary instead of raw JSON. */
+function formatAuditPayload(raw: string | null | undefined): string {
+  if (!raw) return "";
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const parts: string[] = [];
+      for (const [k, val] of Object.entries(v)) {
+        if (val == null) continue;
+        const s =
+          typeof val === "string"
+            ? val
+            : typeof val === "number" || typeof val === "boolean"
+              ? String(val)
+              : JSON.stringify(val);
+        parts.push(`${k}: ${s}`);
+      }
+      return parts.join(" · ");
+    }
+    return String(v);
+  } catch {
+    return raw;
+  }
+}
+
 export default createRoute(async (c) => {
   const rawSlug = c.req.param("slug") ?? "";
   const userId = getDashboardUserId(c);
-  const pg = playgroundHref(c.env);
   const qErr = c.req.query("e");
   const qOk = c.req.query("ok");
 
@@ -54,7 +74,7 @@ export default createRoute(async (c) => {
 
   if (!resolved) {
     return c.render(
-      <Shell title="Team not found" playgroundUrl={pg} auth="signed-in">
+      <Shell title="Team not found" auth="signed-in">
         <PageHeader title="チームが見つかりません" description="" />
         <Card className="max-w-lg p-6">
           <p className="text-sm text-kumo-subtle">
@@ -82,7 +102,7 @@ export default createRoute(async (c) => {
   );
   if (!role) {
     return c.render(
-      <Shell title="Access denied" playgroundUrl={pg} auth="signed-in">
+      <Shell title="Access denied" auth="signed-in">
         <PageHeader
           title="このチームにアクセスできません"
           description="メンバーではありません。"
@@ -112,7 +132,7 @@ export default createRoute(async (c) => {
   return c.render(
     <Shell
       title={`Team ${resolved.slug}`}
-      playgroundUrl={pg}
+
       auth="signed-in"
     >
       <PageHeader
@@ -123,11 +143,6 @@ export default createRoute(async (c) => {
             <span className="font-mono text-kumo-subtle">{resolved.slug}</span>
             {" · "}
             あなたのロール: <Badge variant="zinc">{role}</Badge>
-            {isDashboardDevFallback(c.env, c) ? (
-              <span className="ml-2 text-xs text-kumo-subtle">
-                （dev fallback 有効）
-              </span>
-            ) : null}
           </>
         }
       />
@@ -220,9 +235,7 @@ export default createRoute(async (c) => {
                 placeholder="colleague@example.com"
               />
               <p className="text-xs text-kumo-subtle">
-                作成後、秘密トークン付き URL を一度だけ画面に表示します。メール送信は{" "}
-                <code className="font-mono text-kumo-subtle">SEND_MAIL</code>{" "}
-                設定時のみ。
+                作成後、秘密トークン付き URL を一度だけ画面に表示します。メール送信が有効な環境では招待メールも送信されます。
               </p>
               <ButtonSecondary type="submit">招待を作成</ButtonSecondary>
             </form>
@@ -345,9 +358,7 @@ export default createRoute(async (c) => {
                   <p className="truncate text-xs text-kumo-subtle">
                     {inv.invitedEmail
                       ? `メール: ${inv.invitedEmail}`
-                      : inv.invitedUsername
-                        ? "リンク招待（レガシー・ユーザー名拘束は無効）"
-                        : "リンク招待"}
+                      : "リンク招待"}
                   </p>
                 </div>
                 <form
@@ -381,8 +392,8 @@ export default createRoute(async (c) => {
                   {a.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                 </span>
                 <Badge variant="zinc">{a.action}</Badge>
-                <span className="truncate font-mono text-xs text-kumo-subtle">
-                  {a.payloadJson ?? ""}
+                <span className="truncate text-xs text-kumo-subtle">
+                  {formatAuditPayload(a.payloadJson)}
                 </span>
               </li>
             ))}
@@ -401,7 +412,6 @@ export default createRoute(async (c) => {
 export const POST = createRoute(async (c) => {
   const rawSlug = c.req.param("slug") ?? "";
   const userId = getDashboardUserId(c);
-  const pg = playgroundHref(c.env);
 
   if (!userId) {
     return c.redirect("/login");
@@ -559,7 +569,7 @@ export const POST = createRoute(async (c) => {
       }
 
       return c.render(
-        <Shell title="招待を作成しました" playgroundUrl={pg} auth="signed-in">
+        <Shell title="招待を作成しました" auth="signed-in">
           <PageHeader
             title="招待 URL（この画面を離れると再表示できません）"
             description="リンクをコピーして共有してください。"

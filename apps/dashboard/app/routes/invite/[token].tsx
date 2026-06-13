@@ -7,7 +7,6 @@ import {
 } from "@/data/control-plane";
 import {
   getDashboardUserId,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import {
   ButtonPrimary,
@@ -21,7 +20,6 @@ import { Shell } from "@/ui/shell";
 
 export default createRoute(async (c) => {
   const raw = c.req.param("token") ?? "";
-  const pg = playgroundHref(c.env);
   const uid = getDashboardUserId(c);
   const qErr = c.req.query("e");
 
@@ -32,7 +30,7 @@ export default createRoute(async (c) => {
     return c.render(
       <Shell
         title="Invitation"
-        playgroundUrl={pg}
+
         auth="signed-out"
         loginNext={loginNext}
       >
@@ -68,7 +66,7 @@ export default createRoute(async (c) => {
   return c.render(
     <Shell
       title="Invitation"
-      playgroundUrl={pg}
+
       auth={uid ? "signed-in" : "signed-out"}
       loginNext={uid ? undefined : loginNext}
     >

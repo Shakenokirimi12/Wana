@@ -1,7 +1,7 @@
 import { createRoute } from "honox/factory";
 
 import { createOrganization } from "@/data/control-plane";
-import { getDashboardUserId, playgroundHref } from "@/lib/dashboard-user";
+import { getDashboardUserId } from "@/lib/dashboard-user";
 import { ButtonPrimary, Card, InputField, PageHeader, TextLink } from "@/ui/components";
 import { Shell } from "@/ui/shell";
 
@@ -9,7 +9,6 @@ import { Shell } from "@/ui/shell";
  * 登録直後など、所属チームがないユーザー向けのチーム作成導線。
  */
 export default createRoute(async (c) => {
-  const pg = playgroundHref(c.env);
   const uid = getDashboardUserId(c);
   if (!uid) {
     return c.redirect("/login");
@@ -18,7 +17,7 @@ export default createRoute(async (c) => {
   return c.render(
     <Shell
       title="Create team"
-      playgroundUrl={pg}
+
       auth="signed-in"
     >
       <PageHeader
@@ -78,10 +77,9 @@ export const POST = createRoute(async (c) => {
     // 作成成功したらトップへ（自動的に作成したチームがアクティブになる）
     return c.redirect(`/?ok=1&team=${encodeURIComponent(result.slug)}`);
   } catch (err) {
-    const pg = playgroundHref(c.env);
     const message = err instanceof Error ? err.message : "作成に失敗しました";
     return c.render(
-      <Shell title="Error" playgroundUrl={pg} auth="signed-in">
+      <Shell title="Error" auth="signed-in">
         <PageHeader title="エラー" description="チームの作成中に問題が発生しました。" />
         <Card className="p-8">
           <p className="text-sm text-rose-400 font-medium">{message}</p>

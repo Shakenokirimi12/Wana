@@ -49,7 +49,7 @@ export default reactRenderer(({ children, title, c }) => {
               className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400"
               aria-hidden
             />
-            メンテナンス中 — インジェストはキューに取り込み続けています。処理は再開後に反映されます。
+            メンテナンス中 — 受信したエラーは引き続き取り込まれ、処理は再開後に順次反映されます。
           </div>
         ) : null}
         {children}

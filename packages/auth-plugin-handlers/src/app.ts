@@ -69,7 +69,7 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         {
           error: "login_unavailable",
           message:
-            "このメールアドレスではサインインできません。パスキーが未登録の場合は「パスキーを登録」から登録してください。",
+            "サインインできませんでした。メールアドレスとパスキーをご確認ください。",
         },
         400
       );
