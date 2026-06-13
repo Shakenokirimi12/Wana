@@ -2,26 +2,30 @@
 
 export function projectIssuesLiveScript(
   projectId: string,
-  streamQuery: string
+  streamQuery: string,
+  search = ""
 ): string {
   const id = JSON.stringify(projectId);
   const query = JSON.stringify(streamQuery);
+  const searchJson = JSON.stringify(search.toLowerCase());
   return `(function () {
   var projectId = ${id};
   var streamQuery = ${query};
+  var searchTerm = ${searchJson};
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
   var wsUrl = proto + "//" + location.host + "/p/" + encodeURIComponent(projectId) + "/ws";
   var badgeClass = {
     unresolved: "border-amber-500/25 bg-amber-500/10 text-amber-400",
     resolved: "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
-    ignored: "border-zinc-600/80 bg-zinc-800/40 text-zinc-400",
+    ignored: "border-kumo-hairline bg-kumo-base text-kumo-subtle",
   };
   function esc(s) {
     return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
   function statusBadgeClass(st) {
     return badgeClass[st] || badgeClass.unresolved;
@@ -46,18 +50,26 @@ export function projectIssuesLiveScript(
     if (day < 7) return day + "d ago";
     return new Date(tsMs).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
+  function matchesSearch(r) {
+    if (!searchTerm) return true;
+    return (
+      String(r.value || "").toLowerCase().indexOf(searchTerm) !== -1 ||
+      String(r.type || "").toLowerCase().indexOf(searchTerm) !== -1 ||
+      String(r.culprit || "").toLowerCase().indexOf(searchTerm) !== -1
+    );
+  }
   function applyStreamFilter(rows) {
-    if (streamQuery === "is:all" || streamQuery === "all") return rows;
-    if (streamQuery === "is:unresolved" || streamQuery === "unresolved") {
-      return rows.filter(function (r) { return r.status === "unresolved"; });
+    var byStatus;
+    if (streamQuery === "is:all" || streamQuery === "all") {
+      byStatus = rows;
+    } else if (streamQuery === "is:resolved" || streamQuery === "resolved") {
+      byStatus = rows.filter(function (r) { return r.status === "resolved"; });
+    } else if (streamQuery === "is:ignored" || streamQuery === "ignored") {
+      byStatus = rows.filter(function (r) { return r.status === "ignored"; });
+    } else {
+      byStatus = rows.filter(function (r) { return r.status === "unresolved"; });
     }
-    if (streamQuery === "is:resolved" || streamQuery === "resolved") {
-      return rows.filter(function (r) { return r.status === "resolved"; });
-    }
-    if (streamQuery === "is:ignored" || streamQuery === "ignored") {
-      return rows.filter(function (r) { return r.status === "ignored"; });
-    }
-    return rows.filter(function (r) { return r.status === "unresolved"; });
+    return byStatus.filter(matchesSearch);
   }
   function issueSig(list) {
     return list
@@ -114,30 +126,30 @@ export function projectIssuesLiveScript(
     var total = msg.issues.length;
     if (total === 0) {
       bodyEl.innerHTML =
-        '<div class="px-6 py-14 text-center"><p class="text-sm text-zinc-500">No issues yet. Send events from the Sentry SDK to the ingest worker, or use the Sentry browser test page linked in the footer.</p></div>';
+        '<div class="px-6 py-14 text-center"><p class="text-sm text-kumo-subtle">まだ issue がありません。SDK 経由でエラーを送信すると、ここに表示されます。</p><p class="mt-2 text-xs text-kumo-subtle">設定ページから DSN を確認してください。</p></div>';
       return;
     }
     if (n === 0) {
       var msgEmpty =
         streamQuery === "is:all"
-          ? "No issues in this project."
+          ? "このプロジェクトにはまだ issue がありません。"
           : streamQuery === "is:unresolved"
-            ? "There are no unresolved issues."
+            ? "未解決の issue はありません。"
             : streamQuery === "is:resolved"
-              ? "There are no resolved issues."
+              ? "解決済みの issue はありません。"
               : streamQuery === "is:ignored"
-                ? "There are no ignored issues."
-                : "There are no issues matching this filter.";
+                ? "無視中の issue はありません。"
+                : "条件に一致する issue はありません。";
       bodyEl.innerHTML =
-        '<div class="px-6 py-14 text-center"><p class="text-sm text-zinc-500">' +
+        '<div class="px-6 py-14 text-center"><p class="text-sm text-kumo-subtle">' +
         esc(msgEmpty) +
-        "</p><p class=\"mt-2 text-xs text-zinc-600\">Adjust the tabs above or change issue status from an issue detail page.</p></div>";
+        '</p><p class="mt-2 text-xs text-kumo-subtle">上のタブを切り替えるか、issue 詳細から状態を変更してください。</p></div>';
       return;
     }
 
     var head =
-      '<div class="wana-issue-stream divide-y divide-zinc-800/80">' +
-      '<div class="hidden gap-0 px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_5rem_6.5rem]" role="row">' +
+      '<div class="wana-issue-stream divide-y divide-kumo-hairline">' +
+      '<div class="hidden gap-0 px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-kumo-subtle sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_5rem_6.5rem]" role="row">' +
       '<div class="pr-4">Issue</div><div class="text-right">Last seen</div><div class="text-right">Events</div><div class="text-right">Status</div></div>';
 
     var rows = filtered
@@ -146,28 +158,28 @@ export function projectIssuesLiveScript(
         var cul = row.culprit != null && row.culprit !== "" ? row.culprit : "—";
         var seen = relTime(rowLastSeenMs(row));
         return (
-          '<a class="group grid gap-3 px-5 py-4 transition-colors hover:bg-zinc-800/25 sm:grid-cols-[minmax(0,1fr)_7rem_5rem_6.5rem] sm:items-center sm:gap-0" href="/p/' +
+          '<a class="group grid gap-3 px-5 py-4 transition-colors hover:bg-kumo-base sm:grid-cols-[minmax(0,1fr)_7rem_5rem_6.5rem] sm:items-center sm:gap-0" href="/p/' +
           esc(projectId) +
           "/issues/" +
           esc(row.id) +
           '">' +
           '<div class="min-w-0 space-y-1 pr-4">' +
-          '<p class="text-[15px] font-semibold leading-snug text-zinc-100 group-hover:text-amber-400">' +
+          '<p class="text-[15px] font-semibold leading-snug text-kumo-default group-hover:text-amber-400">' +
           esc(row.value) +
           "</p>" +
-          '<p class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500">' +
-          '<span class="font-medium text-zinc-400">' +
+          '<p class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-kumo-subtle">' +
+          '<span class="font-medium text-kumo-subtle">' +
           esc(row.type) +
-          '</span><span class="text-zinc-600" aria-hidden="true">|</span>' +
-          '<span class="truncate font-mono text-[11px] text-zinc-600">' +
+          '</span><span class="text-kumo-subtle" aria-hidden="true">|</span>' +
+          '<span class="truncate font-mono text-[11px] text-kumo-subtle">' +
           esc(cul) +
           "</span></p></div>" +
-          '<div class="text-left text-xs tabular-nums text-zinc-400 sm:text-right">' +
-          '<span class="text-zinc-600 sm:hidden">Last seen: </span>' +
+          '<div class="text-left text-xs tabular-nums text-kumo-subtle sm:text-right">' +
+          '<span class="text-kumo-subtle sm:hidden">Last seen: </span>' +
           esc(seen) +
           "</div>" +
-          '<div class="text-left text-xs tabular-nums text-zinc-400 sm:text-right">' +
-          '<span class="text-zinc-600 sm:hidden">Events: </span>' +
+          '<div class="text-left text-xs tabular-nums text-kumo-subtle sm:text-right">' +
+          '<span class="text-kumo-subtle sm:hidden">Events: </span>' +
           row.eventsCount +
           "</div>" +
           '<div class="flex sm:justify-end"><span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums ' +
@@ -206,9 +218,9 @@ export function projectIssuesLiveScript(
       text.className = "text-xs font-medium tabular-nums text-amber-200/90";
       return;
     }
-    wrap.className = LIVE_WRAP + " border-zinc-700/80 bg-zinc-900/60";
-    dot.className = DOT_BASE + "bg-zinc-600 ring-2 ring-zinc-700/80";
-    text.className = "text-xs font-medium tabular-nums text-zinc-500";
+    wrap.className = LIVE_WRAP + " border-kumo-hairline bg-kumo-recessed";
+    dot.className = DOT_BASE + "bg-kumo-line ring-2 ring-kumo-hairline";
+    text.className = "text-xs font-medium tabular-nums text-kumo-subtle";
   }
   var ws;
   var pingTimer;

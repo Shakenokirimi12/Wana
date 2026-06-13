@@ -25,6 +25,14 @@ export default createRoute(async (c) => {
     sameSite: "Lax",
     maxAge: 60 * 60 * 24 * 400,
   });
-  const next = c.req.query("next")?.trim() || "/";
-  return c.redirect(next.startsWith("/") ? next : "/");
+  // Only allow same-origin relative paths. Reject protocol-relative (`//host`)
+  // and backslash (`/\host`) forms, which browsers treat as cross-origin.
+  const rawNext = c.req.query("next")?.trim() ?? "";
+  const next =
+    rawNext.startsWith("/") &&
+    !rawNext.startsWith("//") &&
+    !rawNext.startsWith("/\\")
+      ? rawNext
+      : "/";
+  return c.redirect(next);
 });

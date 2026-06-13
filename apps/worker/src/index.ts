@@ -1,9 +1,16 @@
 import type { QueueMessage } from "@wana/types";
 import type { Env } from "./types";
 import { ProjectDataStore } from "./do/ProjectDataStore";
-import { durableObjectIdForStoredProject } from "./lib/durable-id";
+import { durableObjectIdForStoredProject } from "@wana/core";
 
 export { ProjectDataStore };
+
+/**
+ * Sentry event ids are 32 hex chars, but some SDKs/tools send a dashed UUID.
+ * Accept hex + dashes (32–36 chars) — still path-safe (no `/`, `.`, `..`) for
+ * use as an R2 key / DO PK — and reject anything else.
+ */
+const EVENT_ID_RE = /^[0-9a-f-]{32,36}$/i;
 
 export default {
   async fetch(request: Request): Promise<Response> {
@@ -43,51 +50,58 @@ export default {
     // Process each DO's messages
     const promises = Array.from(messagesByDo.entries()).map(
       async ([doId, messages]) => {
-        try {
-          const id = durableObjectIdForStoredProject(env.PROJECT_DO, doId);
-          const doStub = env.PROJECT_DO.get(id);
+        const id = durableObjectIdForStoredProject(env.PROJECT_DO, doId);
+        const doStub = env.PROJECT_DO.get(id);
 
-          // Store payloads in R2 and collect metadata
-          const events = await Promise.all(
-            messages.map(async (msg) => {
-              const { envelope, projectId, receivedAt } = msg.body;
-              const eventId = envelope.header.event_id;
-              const r2Key = `${projectId}/${eventId}.json`;
+        // Store each payload in R2 independently so one bad message (or one
+        // transient R2 error) doesn't drag down the rest of the batch.
+        const ready: { msg: Message<QueueMessage>; event: {
+          envelope: QueueMessage["envelope"];
+          r2Key: string;
+          receivedAt: number;
+        } }[] = [];
 
-              // Store full payload in R2
-              await env.PAYLOAD_STORAGE.put(
-                r2Key,
-                JSON.stringify(envelope),
-                {
-                  customMetadata: {
-                    projectId,
-                    eventId,
-                    receivedAt: String(receivedAt),
-                  },
-                }
-              );
+        for (const msg of messages) {
+          const { envelope, projectId, receivedAt } = msg.body;
+          const eventId = envelope.header.event_id;
 
-              return {
-                envelope,
-                r2Key,
-                receivedAt,
-              };
-            })
-          );
-
-          // Insert events into DO
-          await doStub.insertEvents(events);
-
-          // Acknowledge all messages
-          for (const msg of messages) {
+          // Invalid id is a permanent error — acking drops it (no infinite retry,
+          // no path-injection into the R2 key).
+          if (!EVENT_ID_RE.test(eventId)) {
+            console.warn(
+              `Dropping event with invalid event_id (project ${projectId}):`,
+              eventId
+            );
             msg.ack();
+            continue;
           }
-        } catch (error) {
-          console.error(`Failed to process messages for DO ${doId}:`, error);
-          // Retry failed messages
-          for (const msg of messages) {
+
+          const r2Key = `${projectId}/${eventId}.json`;
+          try {
+            await env.PAYLOAD_STORAGE.put(r2Key, JSON.stringify(envelope), {
+              customMetadata: {
+                projectId,
+                eventId,
+                receivedAt: String(receivedAt),
+              },
+            });
+            ready.push({ msg, event: { envelope, r2Key, receivedAt } });
+          } catch (error) {
+            console.error(`R2 put failed for ${r2Key}, will retry:`, error);
             msg.retry();
           }
+        }
+
+        if (ready.length === 0) return;
+
+        try {
+          // insertEvents is idempotent (ON CONFLICT DO NOTHING), so retrying the
+          // whole group on failure is safe — no double counting.
+          await doStub.insertEvents(ready.map((r) => r.event));
+          for (const r of ready) r.msg.ack();
+        } catch (error) {
+          console.error(`insertEvents failed for DO ${doId}, will retry:`, error);
+          for (const r of ready) r.msg.retry();
         }
       }
     );

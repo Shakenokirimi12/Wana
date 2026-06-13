@@ -8,7 +8,6 @@ import {
 import {
   getActiveOrgId,
   getDashboardUserId,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import { Badge, Card, LinkPrimary, PageHeader } from "@/ui/components";
 import { Shell } from "@/ui/shell";
@@ -34,13 +33,12 @@ export default createRoute(async (c) => {
 
   const me = await getUserDisplayById(c.env.DB_CONTROL, userId);
   const activeTeam = teams.find((t) => t.id === activeOrgId);
-  const pg = playgroundHref(c.env);
   const qOk = c.req.query("ok");
 
   return c.render(
     <Shell
       title="Projects"
-      playgroundUrl={pg}
+
       activeTeamName={activeTeam?.name}
       teamSwitcher={teams.map((t) => ({
         id: t.id,
@@ -62,16 +60,14 @@ export default createRoute(async (c) => {
             アクティブチーム{" "}
             {activeTeam ? (
               <>
-                <span className="font-medium text-zinc-300">{activeTeam.name}</span>
+                <span className="font-medium text-kumo-default">{activeTeam.name}</span>
                 <span className="ml-2 inline-flex items-center gap-2">
                   <Badge variant="zinc">{activeTeam.slug}</Badge>
                 </span>
               </>
             ) : (
-              <span className="text-zinc-500">（未選択）</span>
+              <span className="text-kumo-subtle">（未選択）</span>
             )}
-            {" · "}
-            ユーザー <span className="font-mono text-zinc-400">{userId}</span>
           </>
         }
         actions={
@@ -79,7 +75,7 @@ export default createRoute(async (c) => {
             <LinkPrimary href="/projects/new">New project</LinkPrimary>
             {activeTeam ? (
               <a
-                className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800/50"
+                className="rounded-lg border border-kumo-hairline bg-kumo-recessed px-4 py-2 text-sm font-medium text-kumo-default hover:border-kumo-line hover:bg-kumo-base"
                 href={`/settings/team/${encodeURIComponent(activeTeam.slug)}`}
               >
                 Team settings
@@ -92,15 +88,15 @@ export default createRoute(async (c) => {
       <Card className="overflow-hidden">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/30">
-              <span className="text-2xl text-zinc-600" aria-hidden="true">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-dashed border-kumo-hairline bg-kumo-recessed">
+              <span className="text-2xl text-kumo-subtle" aria-hidden="true">
                 ◈
               </span>
             </div>
             <div className="max-w-sm space-y-2">
-              <p className="font-medium text-zinc-300">プロジェクトがありません</p>
-              <p className="text-sm text-zinc-500">
-                admin 以上なら新規作成できます。メンバーだけの場合は管理者に依頼してください。
+              <p className="font-medium text-kumo-default">プロジェクトがありません</p>
+              <p className="text-sm text-kumo-subtle">
+                管理者ロールがあれば新規作成できます。メンバーの場合は管理者にご依頼ください。
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3">
@@ -108,11 +104,11 @@ export default createRoute(async (c) => {
             </div>
           </div>
         ) : (
-          <ul className="divide-y divide-zinc-800/80">
+          <ul className="divide-y divide-kumo-hairline">
             {rows.map((p) => (
               <li
                 key={p.id}
-                className="group transition-colors hover:bg-zinc-800/20"
+                className="group transition-colors hover:bg-kumo-base"
               >
                 <a
                   className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between"
@@ -120,13 +116,13 @@ export default createRoute(async (c) => {
                 >
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-lg font-semibold tracking-tight text-zinc-50 group-hover:text-amber-400">
+                      <span className="text-lg font-semibold tracking-tight text-kumo-default group-hover:text-amber-400">
                         {p.name}
                       </span>
                       <Badge variant="zinc">{p.orgSlug}</Badge>
                     </div>
-                    <p className="truncate text-sm text-zinc-500">
-                      <span className="text-zinc-400">{p.orgName}</span>
+                    <p className="truncate text-sm text-kumo-subtle">
+                      <span className="text-kumo-subtle">{p.orgName}</span>
                     </p>
                   </div>
                   <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-amber-500/90 group-hover:text-amber-400">

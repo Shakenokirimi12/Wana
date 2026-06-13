@@ -8,14 +8,16 @@
     "./project-store": "./src/do/ProjectDataStore.ts"
   },
   "scripts": {
-    "dev": "wrangler dev --port 8788 --inspector-port 9232",
+    "dev": "wrangler dev --port 8788",
     "deploy": "wrangler deploy --minify",
     "typecheck": "tsc --noEmit",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "test": "vitest run"
   },
   "dependencies": {
     "@wana/schema": "workspace:*",
     "@wana/types": "workspace:*",
+    "@wana/core": "workspace:*",
     "drizzle-orm": "^0.44.0",
     "hono": "^4.12.16"
   },

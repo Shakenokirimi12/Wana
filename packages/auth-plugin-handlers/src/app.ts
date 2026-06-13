@@ -13,6 +13,7 @@ import { Hono } from "hono";
 
 import {
   getUserByEmail,
+  getUserById,
   getWebAuthnCredentialByCredentialId,
   insertWebAuthnCredential,
   inviteTokenAllowsWebAuthnRegistration,
@@ -20,12 +21,16 @@ import {
   updateWebAuthnCredentialCounter,
 } from "./db.js";
 import type { AuthPluginEnv } from "./env.js";
-import { isWebAuthnEmailEnrollmentEnabled } from "./env.js";
+import {
+  isWebAuthnEmailEnrollmentEnabled,
+  isOpenSignupEnabled,
+  OPEN_SIGNUP_TOKEN,
+} from "./env.js";
 import {
   putWebAuthnChallenge,
   takeWebAuthnChallenge,
 } from "./challenge-kv.js";
-import { createDashboardSession } from "./session.js";
+import { createDashboardSession, getSessionUserId } from "./session.js";
 import {
   webauthnExpectedOrigins,
   webauthnExpectedRpIds,
@@ -52,19 +57,19 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
     }
     const email = typeof body.email === "string" ? body.email : "";
     const user = await getUserByEmail(c.env.DB_CONTROL, email);
-    if (!user) {
-      return c.json({ error: "unknown_email" }, 404);
-    }
-    const credIds = await listWebAuthnCredentialIdsForUser(
-      c.env.DB_CONTROL,
-      user.id
-    );
-    if (credIds.length === 0) {
+    // Anti-enumeration: "no such account" and "account without a passkey" return
+    // an IDENTICAL response so a caller can't probe which emails are registered.
+    // Always do the credential lookup (even for a missing user, against a throwaway
+    // id) so the two paths take a similar amount of work.
+    const credIds = user
+      ? await listWebAuthnCredentialIdsForUser(c.env.DB_CONTROL, user.id)
+      : [];
+    if (!user || credIds.length === 0) {
       return c.json(
         {
-          error: "no_credentials",
+          error: "login_unavailable",
           message:
-            "このアカウントに登録されたパスキーがありません。先にパスキー登録を行ってください。",
+            "サインインできませんでした。メールアドレスとパスキーをご確認ください。",
         },
         400
       );
@@ -77,7 +82,9 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         id,
         type: "public-key" as const,
       })),
-      userVerification: "preferred",
+      // Require user verification (PIN/biometric), not just presence, so a
+      // stolen-but-locked authenticator cannot be used.
+      userVerification: "required",
     });
     const challengeKey = crypto.randomUUID();
     await putWebAuthnChallenge(c.env.SYSTEM_CONFIG, challengeKey, {
@@ -128,7 +135,7 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         publicKey: isoBase64URL.toBuffer(row.publicKey, "base64url"),
         counter: row.counter,
       },
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified) {
@@ -157,20 +164,42 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       typeof body.inviteToken === "string" ? body.inviteToken.trim() : "";
 
     const enrollment = isWebAuthnEmailEnrollmentEnabled(c.env);
+    const openSignup =
+      inviteToken === OPEN_SIGNUP_TOKEN && isOpenSignupEnabled(c.env);
     const inviteOk =
       inviteToken.length > 0 &&
+      inviteToken !== OPEN_SIGNUP_TOKEN &&
       (await inviteTokenAllowsWebAuthnRegistration(
         c.env.DB_CONTROL,
         inviteToken,
         email
       ));
-    if (!enrollment && !inviteOk) {
+    const sessionUserId = await getSessionUserId(c);
+    const baseAllow = enrollment || inviteOk || openSignup;
+    if (!baseAllow && !sessionUserId) {
       return c.json({ error: "enrollment_disabled" }, 403);
     }
 
-    const user = await getUserByEmail(c.env.DB_CONTROL, email);
+    // Resolve the target account. When the ONLY authorization is the active
+    // session (authed-self), derive the target purely from `sessionUserId` and
+    // never trust the body `email` to pick a different account — a logged-in
+    // user can only add a passkey to their OWN account.
+    let user: { id: string; email: string; name: string } | null;
+    if (!baseAllow && sessionUserId) {
+      user = await getUserById(c.env.DB_CONTROL, sessionUserId);
+      if (user && email && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+        return c.json({ error: "email_mismatch" }, 400);
+      }
+    } else {
+      user = await getUserByEmail(c.env.DB_CONTROL, email);
+    }
     if (!user) {
       return c.json({ error: "unknown_email" }, 404);
+    }
+
+    const authedSelf = !!sessionUserId && sessionUserId === user.id;
+    if (!baseAllow && !authedSelf) {
+      return c.json({ error: "enrollment_disabled" }, 403);
     }
 
     const rpID = webauthnRpId(c.req.url, c.env);
@@ -178,6 +207,11 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       c.env.DB_CONTROL,
       user.id
     );
+    // Open signup is first-passkey enrollment only — never add a credential to
+    // an account that already has one via the open-signup token.
+    if (openSignup && existing.length > 0) {
+      return c.json({ error: "already_registered" }, 409);
+    }
 
     const uidBuf = new TextEncoder().encode(user.id);
     const options = await generateRegistrationOptions({
@@ -189,7 +223,7 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       attestationType: "none",
       authenticatorSelection: {
         residentKey: "preferred",
-        userVerification: "preferred",
+        userVerification: "required",
       },
       excludeCredentials: existing.map((id) => ({
         id,
@@ -230,20 +264,50 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
     }
 
     const enrollment = isWebAuthnEmailEnrollmentEnabled(c.env);
+    const openSignup =
+      inviteToken === OPEN_SIGNUP_TOKEN && isOpenSignupEnabled(c.env);
     const inviteOk =
       inviteToken.length > 0 &&
+      inviteToken !== OPEN_SIGNUP_TOKEN &&
       (await inviteTokenAllowsWebAuthnRegistration(
         c.env.DB_CONTROL,
         inviteToken,
         email
       ));
-    if (!enrollment && !inviteOk) {
+    const sessionUserId = await getSessionUserId(c);
+    const baseAllow = enrollment || inviteOk || openSignup;
+    if (!baseAllow && !sessionUserId) {
       return c.json({ error: "enrollment_disabled" }, 403);
     }
 
-    const user = await getUserByEmail(c.env.DB_CONTROL, email);
+    // Mirror register/options: in the authed-self path the target is the
+    // session user, never the body email.
+    let user: { id: string; email: string; name: string } | null;
+    if (!baseAllow && sessionUserId) {
+      user = await getUserById(c.env.DB_CONTROL, sessionUserId);
+      if (user && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+        return c.json({ error: "email_mismatch" }, 400);
+      }
+    } else {
+      user = await getUserByEmail(c.env.DB_CONTROL, email);
+    }
     if (!user) {
       return c.json({ error: "unknown_email" }, 404);
+    }
+
+    const authedSelf = !!sessionUserId && sessionUserId === user.id;
+    if (!baseAllow && !authedSelf) {
+      return c.json({ error: "enrollment_disabled" }, 403);
+    }
+
+    if (openSignup) {
+      const existingCreds = await listWebAuthnCredentialIdsForUser(
+        c.env.DB_CONTROL,
+        user.id
+      );
+      if (existingCreds.length > 0) {
+        return c.json({ error: "already_registered" }, 409);
+      }
     }
 
     const stored = await takeWebAuthnChallenge(c.env.SYSTEM_CONFIG, challengeKey);
@@ -256,7 +320,7 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       expectedChallenge: stored.challenge,
       expectedOrigin: webauthnExpectedOrigins(c.req.url, c.env),
       expectedRPID: webauthnExpectedRpIds(c.req.url, c.env),
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {

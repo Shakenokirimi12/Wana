@@ -39,16 +39,20 @@ export const projects = sqliteTable("projects", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-export const apiKeys = sqliteTable("api_keys", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id),
-  keyHash: text("key_hash").notNull(),
-  hint: text("hint").notNull(),
-  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+export const apiKeys = sqliteTable(
+  "api_keys",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id),
+    keyHash: text("key_hash").notNull(),
+    hint: text("hint").notNull(),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("idx_api_keys_hash_project").on(t.keyHash, t.projectId)]
+);
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),

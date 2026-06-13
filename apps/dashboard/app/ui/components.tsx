@@ -2,63 +2,38 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import type { IssueStatus } from "@wana/types";
 
+import { Button, LinkButton } from "@cloudflare/kumo/components/button";
+import { LayerCard } from "@cloudflare/kumo/components/layer-card";
+import { Badge as KumoBadge } from "@cloudflare/kumo/components/badge";
+import { Input } from "@cloudflare/kumo/components/input";
+import { Link } from "@cloudflare/kumo/components/link";
+
 /**
- * 公式 Shadcn/ui は React + Radix 前提のため、この SSR アプリには未導入。
- * フォーカスリング・半径・バリアントは shadcn (zinc dark) に寄せた実装。
+ * UI コンポーネントは @cloudflare/kumo (Base UI + Tailwind v4) に全面移行。
+ * 呼び出し側 (routes) の API を変えないためのファサード。
+ *
+ * ここで使うのは SSR 安全な静的コンポーネントのみ:
+ * Button（フォーム submit / リンク）, LayerCard, Badge, Input。
+ * Dialog/Select 等の対話系は `app/islands/` 経由で使う（このファイルでは使わない）。
  */
-const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
-
-const primaryBtn = `inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-amber-500 px-4 text-sm font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-amber-400 ${focusRing} disabled:pointer-events-none disabled:opacity-50`;
-
-const secondaryBtn = `inline-flex h-10 items-center justify-center rounded-[var(--radius-md)] border border-zinc-600 bg-zinc-800/80 px-4 text-sm font-medium text-zinc-100 shadow-sm transition-colors hover:bg-zinc-700/90 ${focusRing} disabled:pointer-events-none disabled:opacity-50`;
-
-const ghostBtn = `inline-flex h-10 items-center justify-center rounded-[var(--radius-md)] border border-zinc-700/80 bg-zinc-900/30 px-4 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800/50 hover:text-zinc-50 ${focusRing}`;
-
-const textLink =
-  "text-sm font-medium text-amber-500 transition-colors hover:text-amber-400";
-
-const outlineBtn = `inline-flex h-10 items-center justify-center rounded-[var(--radius-md)] border border-zinc-600 bg-transparent px-4 text-sm font-medium text-zinc-200 shadow-sm transition-colors hover:border-zinc-500 hover:bg-zinc-800/40 hover:text-zinc-50 ${focusRing} disabled:pointer-events-none disabled:opacity-50`;
-
-const successBtn = `inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 ${focusRing} disabled:pointer-events-none disabled:opacity-50`;
-
-const destructiveOutlineBtn = `inline-flex h-10 items-center justify-center rounded-[var(--radius-md)] border border-rose-500/55 bg-transparent px-4 text-sm font-medium text-rose-300 shadow-sm transition-colors hover:bg-rose-500/10 hover:text-rose-200 ${focusRing} disabled:pointer-events-none disabled:opacity-50`;
-
-export function ButtonOutline(props: {
-  type?: "submit" | "button";
-  children: ReactNode;
-  disabled?: boolean;
-  className?: string;
-}) {
-  const extra = props.className ?? "";
-  return (
-    <button
-      className={`${outlineBtn} ${extra}`}
-      disabled={props.disabled}
-      type={props.type ?? "button"}
-    >
-      {props.children}
-    </button>
-  );
-}
 
 type NativeButtonProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "className"
 > & { className?: string };
 
-export function ButtonSecondary(props: NativeButtonProps & { children: ReactNode }) {
-  const { className: cn, children, type = "button", ...rest } = props;
-  const extra = cn ?? "";
-  return (
-    <button
-      className={`${secondaryBtn} ${extra}`}
-      type={type}
-      {...rest}
-    >
-      {children}
-    </button>
-  );
+export function ButtonPrimary(
+  props: NativeButtonProps & { children: ReactNode }
+) {
+  const { type = "button", ...rest } = props;
+  return <Button variant="primary" type={type} {...rest} />;
+}
+
+export function ButtonSecondary(
+  props: NativeButtonProps & { children: ReactNode }
+) {
+  const { type = "button", ...rest } = props;
+  return <Button variant="secondary" type={type} {...rest} />;
 }
 
 export function ButtonSuccess(props: {
@@ -67,15 +42,33 @@ export function ButtonSuccess(props: {
   disabled?: boolean;
   className?: string;
 }) {
-  const extra = props.className ?? "";
   return (
-    <button
-      className={`${successBtn} ${extra}`}
-      disabled={props.disabled}
+    <Button
+      variant="primary"
       type={props.type ?? "button"}
+      disabled={props.disabled}
+      className={props.className}
     >
       {props.children}
-    </button>
+    </Button>
+  );
+}
+
+export function ButtonOutline(props: {
+  type?: "submit" | "button";
+  children: ReactNode;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant="outline"
+      type={props.type ?? "button"}
+      disabled={props.disabled}
+      className={props.className}
+    >
+      {props.children}
+    </Button>
   );
 }
 
@@ -85,58 +78,44 @@ export function ButtonDestructiveOutline(props: {
   disabled?: boolean;
   className?: string;
 }) {
-  const extra = props.className ?? "";
   return (
-    <button
-      className={`${destructiveOutlineBtn} ${extra}`}
-      disabled={props.disabled}
+    <Button
+      variant="destructive"
       type={props.type ?? "button"}
+      disabled={props.disabled}
+      className={props.className}
     >
       {props.children}
-    </button>
+    </Button>
   );
 }
 
 export function LinkPrimary(props: { href: string; children: ReactNode }) {
   return (
-    <a className={primaryBtn} href={props.href}>
+    <LinkButton href={props.href} variant="primary">
       {props.children}
-    </a>
+    </LinkButton>
   );
 }
 
 export function LinkOutline(props: { href: string; children: ReactNode }) {
   return (
-    <a className={outlineBtn} href={props.href}>
+    <LinkButton href={props.href} variant="outline">
       {props.children}
-    </a>
-  );
-}
-
-export function ButtonPrimary(props: NativeButtonProps & { children: ReactNode }) {
-  const { className: cn, children, type = "button", ...rest } = props;
-  const extra = cn ?? "";
-  return (
-    <button className={`${primaryBtn} ${extra}`} type={type} {...rest}>
-      {children}
-    </button>
+    </LinkButton>
   );
 }
 
 export function LinkGhost(props: { href: string; children: ReactNode }) {
   return (
-    <a className={ghostBtn} href={props.href}>
+    <LinkButton href={props.href} variant="ghost">
       {props.children}
-    </a>
+    </LinkButton>
   );
 }
 
 export function TextLink(props: { href: string; children: ReactNode }) {
-  return (
-    <a className={textLink} href={props.href}>
-      {props.children}
-    </a>
-  );
+  return <Link href={props.href}>{props.children}</Link>;
 }
 
 type PageHeaderProps = {
@@ -149,11 +128,11 @@ export function PageHeader(props: PageHeaderProps) {
   return (
     <div className="mb-10 flex flex-col gap-8 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
       <div className="max-w-2xl space-y-3">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-50 sm:text-4xl">
+        <h1 className="text-3xl font-semibold tracking-tight text-kumo-default sm:text-4xl">
           {props.title}
         </h1>
         {props.description ? (
-          <div className="text-sm leading-relaxed text-zinc-400 sm:text-base">
+          <div className="text-sm leading-relaxed text-kumo-subtle sm:text-base">
             {props.description}
           </div>
         ) : null}
@@ -168,36 +147,26 @@ export function PageHeader(props: PageHeaderProps) {
 }
 
 export function Card(props: { children: ReactNode; className?: string }) {
-  const extra = props.className ?? "";
-  return (
-    <div
-      className={`rounded-[var(--radius-lg)] border border-zinc-800/80 bg-zinc-900/40 shadow-[var(--shadow-wana-glow)] backdrop-blur-sm ${extra}`}
-    >
-      {props.children}
-    </div>
-  );
+  return <LayerCard className={props.className}>{props.children}</LayerCard>;
 }
 
+/** 呼び出し側互換の意味色。kumo の Badge variant にマップする。 */
 type BadgeVariant = "default" | "amber" | "emerald" | "zinc" | "rose";
 
-const badgeStyles: Record<BadgeVariant, string> = {
-  default: "border-zinc-700/80 bg-zinc-800/60 text-zinc-300",
-  amber: "border-amber-500/25 bg-amber-500/10 text-amber-400",
-  emerald: "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
-  zinc: "border-zinc-600/80 bg-zinc-800/40 text-zinc-400",
-  rose: "border-rose-500/25 bg-rose-500/10 text-rose-400",
+const badgeVariantMap: Record<
+  BadgeVariant,
+  "neutral" | "warning" | "success" | "error"
+> = {
+  default: "neutral",
+  amber: "warning",
+  emerald: "success",
+  zinc: "neutral",
+  rose: "error",
 };
 
 export function Badge(props: { variant?: BadgeVariant; children: ReactNode }) {
   const v = props.variant ?? "default";
-  const styles = badgeStyles[v];
-  return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums ${styles}`}
-    >
-      {props.children}
-    </span>
-  );
+  return <KumoBadge variant={badgeVariantMap[v]}>{props.children}</KumoBadge>;
 }
 
 export function issueStatusVariant(status: string): BadgeVariant {
@@ -214,7 +183,8 @@ export function issueStatusVariant(status: string): BadgeVariant {
 }
 
 /**
- * Issue 詳細用: 現在ステータスをリングで強調し、Ignore / Resolve は色分け。
+ * Issue 詳細用ステータス切替。現在のステータスは無効化＋強調、他は kumo Button で送信。
+ * フォーム POST で動くため island 不要（SSR 安全）。
  */
 export function IssueStatusToolbar(props: {
   action: string;
@@ -222,20 +192,11 @@ export function IssueStatusToolbar(props: {
 }) {
   const { action, status } = props;
 
-  const activeShell =
-    "shadow-md ring-2 ring-offset-2 ring-offset-zinc-950 cursor-default font-semibold";
-  const activeUnresolved = `${activeShell} border-amber-500/70 bg-amber-500/15 text-amber-200 ring-amber-500/50`;
-  const activeResolved = `${activeShell} border-emerald-600/70 bg-emerald-500/12 text-emerald-200 ring-emerald-500/45`;
-  const activeIgnored = `${activeShell} border-zinc-500/70 bg-zinc-700/35 text-zinc-200 ring-zinc-500/40`;
-
-  const idleBase = `rounded-[var(--radius-md)] border px-4 py-2 text-sm font-medium transition-colors ${focusRing}`;
-
   type Opt = {
     value: IssueStatus;
     label: string;
     sub: string;
-    activeClass: string;
-    idleClass: string;
+    variant: "secondary" | "primary" | "destructive";
   };
 
   const opts: Opt[] = [
@@ -243,25 +204,19 @@ export function IssueStatusToolbar(props: {
       value: "unresolved",
       label: "Unresolved",
       sub: "調査中・再オープン",
-      activeClass: activeUnresolved,
-      idleClass:
-        "border-zinc-600/80 bg-zinc-900/40 text-zinc-200 hover:border-amber-500/35 hover:bg-amber-500/5 hover:text-amber-100",
+      variant: "secondary",
     },
     {
       value: "resolved",
       label: "Resolve",
       sub: "対応完了として閉じる",
-      activeClass: activeResolved,
-      idleClass:
-        "border-emerald-700/50 bg-emerald-950/25 text-emerald-100 hover:border-emerald-500/55 hover:bg-emerald-500/10",
+      variant: "primary",
     },
     {
       value: "ignored",
       label: "Ignore",
       sub: "通知を抑止",
-      activeClass: activeIgnored,
-      idleClass:
-        "border-rose-500/35 bg-rose-950/15 text-rose-100 hover:border-rose-400/50 hover:bg-rose-500/10",
+      variant: "destructive",
     },
   ];
 
@@ -271,11 +226,10 @@ export function IssueStatusToolbar(props: {
       role="group"
       aria-label="Issue status actions"
     >
-      <p className="text-xs leading-relaxed text-zinc-500">
-        現在の状態は<strong className="text-zinc-400">リング付きのボタン</strong>
-        です。他のボタンで切り替えられます。
+      <p className="text-xs leading-relaxed text-kumo-subtle">
+        現在の状態のボタンは無効です。他のボタンで切り替えてください。
       </p>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {opts.map((o) => {
           const isCurrent = status === o.value;
           return (
@@ -286,20 +240,19 @@ export function IssueStatusToolbar(props: {
               key={o.value}
             >
               <input type="hidden" name="status" value={o.value} />
-              <button
+              <Button
                 type="submit"
+                variant={isCurrent ? "secondary" : o.variant}
                 disabled={isCurrent}
-                className={
-                  isCurrent
-                    ? `flex w-full min-h-10 flex-col items-center justify-center gap-0.5 ${idleBase} ${o.activeClass}`
-                    : `flex w-full min-h-10 flex-col items-center justify-center gap-0.5 ${idleBase} ${o.idleClass}`
-                }
+                className="w-full sm:w-auto"
               >
-                <span>{isCurrent ? `${o.label} · 現在` : o.label}</span>
-                <span className="text-[10px] font-normal leading-tight opacity-80">
-                  {o.sub}
+                <span className="flex flex-col items-center leading-tight">
+                  <span>{isCurrent ? `${o.label} · 現在` : o.label}</span>
+                  <span className="text-[10px] font-normal opacity-80">
+                    {o.sub}
+                  </span>
                 </span>
-              </button>
+              </Button>
             </form>
           );
         })}
@@ -317,21 +270,16 @@ export function InputField(props: {
   mono?: boolean;
   defaultValue?: string;
 }) {
-  const font = props.mono ? "font-mono text-sm" : "text-sm";
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-zinc-300">
-        {props.label}
-      </label>
-      <input
-        className={`h-11 w-full rounded-[var(--radius-md)] border border-zinc-700/90 bg-zinc-950/50 px-4 text-zinc-100 placeholder-zinc-600 transition-colors focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 ${font}`}
-        name={props.name}
-        placeholder={props.placeholder}
-        required={props.required}
-        type={props.type ?? "text"}
-        defaultValue={props.defaultValue}
-      />
-    </div>
+    <Input
+      label={props.label}
+      name={props.name}
+      type={props.type ?? "text"}
+      placeholder={props.placeholder}
+      required={props.required}
+      defaultValue={props.defaultValue}
+      className={props.mono ? "font-mono" : undefined}
+    />
   );
 }
 
@@ -342,13 +290,15 @@ export function SelectField(props: {
   defaultValue?: string;
   children: ReactNode;
 }) {
+  // kumo Select は Base UI のリストボックス（要ハイドレーション）。フォーム POST を
+  // JS なしで成立させるため、ネイティブ select を kumo トークンで装飾する。
   return (
     <div className="space-y-2">
-      <label className="block text-sm font-medium text-zinc-300">
+      <label className="block text-sm font-medium text-kumo-default">
         {props.label}
       </label>
       <select
-        className="h-11 w-full cursor-pointer rounded-[var(--radius-md)] border border-zinc-700/90 bg-zinc-950/50 px-4 text-sm text-zinc-100 transition-colors focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+        className="h-11 w-full cursor-pointer rounded-md border border-kumo-hairline bg-kumo-base px-4 text-sm text-kumo-default transition-colors focus:border-kumo-brand focus:outline-none focus:ring-2 focus:ring-kumo-brand/30"
         name={props.name}
         required={props.required}
         defaultValue={props.defaultValue}

@@ -2,9 +2,8 @@ import { createRoute } from "honox/factory";
 
 import {
   getDashboardUserId,
-  isDashboardDevFallback,
+  isOpenSignupEnabled,
   isWebAuthnEmailEnrollmentEnabled,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import {
   ButtonPrimary,
@@ -28,16 +27,14 @@ export default createRoute(async (c) => {
   if (uid) {
     return c.redirect(next ?? "/");
   }
-  const pg = playgroundHref(c.env);
-  const devFb = isDashboardDevFallback(c.env);
   const enrollment = isWebAuthnEmailEnrollmentEnabled(c.env);
   const nextAttr = next ?? "/";
 
   return c.render(
-    <Shell title="Sign in" playgroundUrl={pg} auth="hidden">
+    <Shell title="Sign in" auth="hidden">
       <PageHeader
         title="ログイン"
-        description="メールアドレスを入力し、パスキー（WebAuthn）でサインインします。未登録の場合は「パスキーを登録」で初回登録できます（ローカルでは WEBAUTHN_ALLOW_EMAIL_ENROLLMENT を有効にしています）。"
+        description="メールアドレスを入力し、パスキーでサインインします。"
       />
       <Card className="max-w-lg space-y-4 p-6 sm:p-8">
         <div
@@ -47,7 +44,7 @@ export default createRoute(async (c) => {
           data-next={nextAttr}
         >
           <div className="space-y-2">
-            <label className="block text-xs font-medium uppercase tracking-wider text-zinc-500">
+            <label className="block text-xs font-medium uppercase tracking-wider text-kumo-subtle">
               メールアドレス
             </label>
             <input
@@ -55,7 +52,7 @@ export default createRoute(async (c) => {
               type="email"
               autoComplete="username webauthn"
               placeholder="you@example.com"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+              className="w-full rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 py-2 text-sm text-kumo-default placeholder:text-kumo-subtle focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
             />
           </div>
           <p
@@ -75,38 +72,12 @@ export default createRoute(async (c) => {
         </div>
         <script type="module" src="/static/passkey-login.js" />
 
-        <div className="border-t border-zinc-800/80 pt-4">
-          <p className="text-sm leading-relaxed text-zinc-400">
-            セッション Cookie がある場合は自動的に認可されます。ローカルでは{" "}
-            <code className="rounded bg-zinc-800/80 px-1 font-mono text-zinc-300">
-              DASHBOARD_DEV_FALLBACK
-            </code>{" "}
-            が有効なとき、{" "}
-            <code className="rounded bg-zinc-800/80 px-1 font-mono text-zinc-300">
-              DASHBOARD_USER_ID
-            </code>{" "}
-            でユーザーが決まります（本番では無効にしてください）。
-          </p>
-          {devFb ? (
-            <>
-              <p className="mt-2 text-xs text-amber-200/90">
-                現在: dev fallback 有効 — トップへ進むとシードユーザーとして扱われます（Cookie
-                なし）。
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">
-                または、次のボタンで D1 にセッションを作成し本番同等の Cookie パスを試せます。
-              </p>
-              <form method="post" action="/dev/session" className="mt-3">
-                {next ? <input type="hidden" name="next" value={next} /> : null}
-                <ButtonPrimary type="submit">Dev: セッションを作成</ButtonPrimary>
-              </form>
-            </>
-          ) : (
-            <p className="mt-2 text-xs text-zinc-500">
-              dev fallback 無効: パスキーまたは D1 セッションが必要です。
-            </p>
-          )}
-        </div>
+        {isOpenSignupEnabled(c.env) ? (
+          <div className="border-t border-kumo-hairline pt-4 text-sm text-kumo-subtle">
+            アカウントをお持ちでない方は{" "}
+            <TextLink href="/signup">新規登録</TextLink>
+          </div>
+        ) : null}
         <div className="pt-2">
           <TextLink href="/">← トップへ</TextLink>
         </div>

@@ -24,7 +24,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "SYSTEM_CONFIG",
-			"id": "placeholder-kv-id"
+			"id": "10923c906f13434f8a573b15d5f5adcc"
 		}
 	],
 	// R2 for storing full error payloads
@@ -40,7 +40,12 @@
 			{
 				"queue": "wana-error-queue",
 				"max_batch_size": 100,
-				"max_batch_timeout": 5
+				"max_batch_timeout": 5,
+				// Cap retries and route poison messages to a dead-letter queue
+				// instead of retrying forever. Create it once with:
+				//   wrangler queues create wana-error-dlq
+				"max_retries": 5,
+				"dead_letter_queue": "wana-error-dlq"
 			}
 		]
 	},

@@ -10,13 +10,13 @@ import {
   revokeOrganizationInvite,
   updateOrganizationDisplayName,
   updateOrganizationSlugWithRedirect,
+  setMemberRole,
+  removeMember,
+  transferOwnership,
+  listAuditEventsForOrg,
 } from "@/data/control-plane";
 import { sendTransactionalEmail } from "@/lib/email";
-import {
-  getDashboardUserId,
-  isDashboardDevFallback,
-  playgroundHref,
-} from "@/lib/dashboard-user";
+import { getDashboardUserId } from "@/lib/dashboard-user";
 import {
   Badge,
   ButtonDestructiveOutline,
@@ -35,10 +35,34 @@ function roleBadgeVariant(role: string): "zinc" | "amber" {
   return "zinc";
 }
 
+/** Render audit-event payload as a compact "key: value" summary instead of raw JSON. */
+function formatAuditPayload(raw: string | null | undefined): string {
+  if (!raw) return "";
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const parts: string[] = [];
+      for (const [k, val] of Object.entries(v)) {
+        if (val == null) continue;
+        const s =
+          typeof val === "string"
+            ? val
+            : typeof val === "number" || typeof val === "boolean"
+              ? String(val)
+              : JSON.stringify(val);
+        parts.push(`${k}: ${s}`);
+      }
+      return parts.join(" · ");
+    }
+    return String(v);
+  } catch {
+    return raw;
+  }
+}
+
 export default createRoute(async (c) => {
   const rawSlug = c.req.param("slug") ?? "";
   const userId = getDashboardUserId(c);
-  const pg = playgroundHref(c.env);
   const qErr = c.req.query("e");
   const qOk = c.req.query("ok");
 
@@ -50,12 +74,12 @@ export default createRoute(async (c) => {
 
   if (!resolved) {
     return c.render(
-      <Shell title="Team not found" playgroundUrl={pg} auth="signed-in">
+      <Shell title="Team not found" auth="signed-in">
         <PageHeader title="チームが見つかりません" description="" />
         <Card className="max-w-lg p-6">
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-kumo-subtle">
             slug{" "}
-            <span className="font-mono text-zinc-400">{rawSlug}</span>{" "}
+            <span className="font-mono text-kumo-subtle">{rawSlug}</span>{" "}
             に一致する組織がありません。
           </p>
           <div className="mt-6">
@@ -78,7 +102,7 @@ export default createRoute(async (c) => {
   );
   if (!role) {
     return c.render(
-      <Shell title="Access denied" playgroundUrl={pg} auth="signed-in">
+      <Shell title="Access denied" auth="signed-in">
         <PageHeader
           title="このチームにアクセスできません"
           description="メンバーではありません。"
@@ -99,11 +123,16 @@ export default createRoute(async (c) => {
   const invites = canAdmin
     ? await listPendingInvitesForOrg(c.env.DB_CONTROL, resolved.orgId)
     : [];
+  const auditLog = canAdmin
+    ? await listAuditEventsForOrg(c.env.DB_CONTROL, resolved.orgId, 30)
+    : [];
+  const isOwner = role === "owner";
+  const redirectBase = `/settings/team/${encodeURIComponent(resolved.slug)}`;
 
   return c.render(
     <Shell
       title={`Team ${resolved.slug}`}
-      playgroundUrl={pg}
+
       auth="signed-in"
     >
       <PageHeader
@@ -111,14 +140,9 @@ export default createRoute(async (c) => {
         description={
           <>
             スラッグ{" "}
-            <span className="font-mono text-zinc-400">{resolved.slug}</span>
+            <span className="font-mono text-kumo-subtle">{resolved.slug}</span>
             {" · "}
             あなたのロール: <Badge variant="zinc">{role}</Badge>
-            {isDashboardDevFallback(c.env) ? (
-              <span className="ml-2 text-xs text-zinc-600">
-                （dev fallback 有効）
-              </span>
-            ) : null}
           </>
         }
       />
@@ -137,7 +161,7 @@ export default createRoute(async (c) => {
       {canAdmin ? (
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           <Card className="p-6">
-            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
               チーム名・スラッグ
             </h2>
             <form
@@ -164,7 +188,7 @@ export default createRoute(async (c) => {
           </Card>
 
           <Card className="p-6">
-            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
               招待を作成
             </h2>
             <form
@@ -210,10 +234,8 @@ export default createRoute(async (c) => {
                 name="invited_email"
                 placeholder="colleague@example.com"
               />
-              <p className="text-xs text-zinc-500">
-                作成後、秘密トークン付き URL を一度だけ画面に表示します。メール送信は{" "}
-                <code className="font-mono text-zinc-400">SEND_MAIL</code>{" "}
-                設定時のみ。
+              <p className="text-xs text-kumo-subtle">
+                作成後、秘密トークン付き URL を一度だけ画面に表示します。メール送信が有効な環境では招待メールも送信されます。
               </p>
               <ButtonSecondary type="submit">招待を作成</ButtonSecondary>
             </form>
@@ -222,39 +244,90 @@ export default createRoute(async (c) => {
       ) : null}
 
       <Card className="max-w-3xl overflow-hidden">
-        <div className="border-b border-zinc-800/80 px-5 py-3 sm:px-6">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
             メンバー
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[32rem] text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-800/60 text-xs text-zinc-500">
+              <tr className="border-b border-kumo-hairline text-xs text-kumo-subtle">
                 <th className="px-5 py-3 font-medium sm:px-6">名前</th>
                 <th className="px-3 py-3 font-medium">メール</th>
                 <th className="px-3 py-3 font-medium">ユーザー名</th>
                 <th className="px-5 py-3 font-medium sm:px-6">ロール</th>
+                {canAdmin ? (
+                  <th className="px-5 py-3 font-medium sm:px-6">操作</th>
+                ) : null}
               </tr>
             </thead>
-            <tbody className="text-zinc-300">
-              {members.map((m) => (
-                <tr
-                  key={m.userId}
-                  className="border-b border-zinc-800/40 last:border-0"
-                >
-                  <td className="px-5 py-3 sm:px-6">
-                    <span className="font-medium text-zinc-100">{m.name}</span>
-                  </td>
-                  <td className="px-3 py-3 text-zinc-400">{m.email}</td>
-                  <td className="px-3 py-3 font-mono text-xs text-zinc-500">
-                    {m.username ?? "—"}
-                  </td>
-                  <td className="px-5 py-3 sm:px-6">
-                    <Badge variant={roleBadgeVariant(m.role)}>{m.role}</Badge>
-                  </td>
-                </tr>
-              ))}
+            <tbody className="text-kumo-default">
+              {members.map((m) => {
+                const isSelf = m.userId === userId;
+                const targetOwner = m.role === "owner";
+                return (
+                  <tr
+                    key={m.userId}
+                    className="border-b border-kumo-hairline last:border-0"
+                  >
+                    <td className="px-5 py-3 sm:px-6">
+                      <span className="font-medium text-kumo-default">
+                        {m.name}
+                        {isSelf ? (
+                          <span className="ml-1 text-xs text-kumo-subtle">
+                            (you)
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-kumo-subtle">{m.email}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-kumo-subtle">
+                      {m.username ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 sm:px-6">
+                      <Badge variant={roleBadgeVariant(m.role)}>{m.role}</Badge>
+                    </td>
+                    {canAdmin ? (
+                      <td className="px-5 py-3 sm:px-6">
+                        {targetOwner || isSelf ? (
+                          <span className="text-xs text-kumo-subtle">—</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <form method="post" action={redirectBase} className="flex items-center gap-1">
+                              <input type="hidden" name="action" value="set_member_role" />
+                              <input type="hidden" name="target_user_id" value={m.userId} />
+                              <select
+                                name="role"
+                                defaultValue={m.role}
+                                className="h-8 rounded-md border border-kumo-hairline bg-kumo-base px-2 text-xs text-kumo-default"
+                              >
+                                <option value="member">member</option>
+                                <option value="admin">admin</option>
+                              </select>
+                              <ButtonSecondary type="submit">変更</ButtonSecondary>
+                            </form>
+                            <form method="post" action={redirectBase}>
+                              <input type="hidden" name="action" value="remove_member" />
+                              <input type="hidden" name="target_user_id" value={m.userId} />
+                              <ButtonDestructiveOutline type="submit">削除</ButtonDestructiveOutline>
+                            </form>
+                            {isOwner ? (
+                              <form method="post" action={redirectBase}>
+                                <input type="hidden" name="action" value="transfer_ownership" />
+                                <input type="hidden" name="target_user_id" value={m.userId} />
+                                <ButtonDestructiveOutline type="submit">
+                                  オーナー移譲
+                                </ButtonDestructiveOutline>
+                              </form>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -262,12 +335,12 @@ export default createRoute(async (c) => {
 
       {canAdmin && invites.length > 0 ? (
         <Card className="mt-8 max-w-3xl overflow-hidden">
-          <div className="border-b border-zinc-800/80 px-5 py-3 sm:px-6">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
               未処理の招待
             </h2>
           </div>
-          <ul className="divide-y divide-zinc-800/80">
+          <ul className="divide-y divide-kumo-hairline">
             {invites.map((inv) => (
               <li
                 key={inv.id}
@@ -276,18 +349,16 @@ export default createRoute(async (c) => {
                 <div className="min-w-0 space-y-1 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="zinc">{inv.role}</Badge>
-                    <span className="text-zinc-500">
+                    <span className="text-kumo-subtle">
                       {inv.useCount}/{inv.maxUses} 回 · 期限{" "}
                       {inv.expiresAt.toISOString().slice(0, 16).replace("T", " ")}{" "}
                       UTC
                     </span>
                   </div>
-                  <p className="truncate text-xs text-zinc-600">
+                  <p className="truncate text-xs text-kumo-subtle">
                     {inv.invitedEmail
                       ? `メール: ${inv.invitedEmail}`
-                      : inv.invitedUsername
-                        ? "リンク招待（レガシー・ユーザー名拘束は無効）"
-                        : "リンク招待"}
+                      : "リンク招待"}
                   </p>
                 </div>
                 <form
@@ -307,6 +378,29 @@ export default createRoute(async (c) => {
         </Card>
       ) : null}
 
+      {canAdmin && auditLog.length > 0 ? (
+        <Card className="mt-8 max-w-3xl overflow-hidden">
+          <div className="border-b border-kumo-hairline px-5 py-3 sm:px-6">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
+              監査ログ（最近 30 件）
+            </h2>
+          </div>
+          <ul className="divide-y divide-kumo-hairline text-sm">
+            {auditLog.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 sm:px-6">
+                <span className="font-mono text-[11px] tabular-nums text-kumo-subtle">
+                  {a.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                </span>
+                <Badge variant="zinc">{a.action}</Badge>
+                <span className="truncate text-xs text-kumo-subtle">
+                  {formatAuditPayload(a.payloadJson)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       <p className="mt-8">
         <TextLink href="/">← Projects</TextLink>
       </p>
@@ -318,7 +412,6 @@ export default createRoute(async (c) => {
 export const POST = createRoute(async (c) => {
   const rawSlug = c.req.param("slug") ?? "";
   const userId = getDashboardUserId(c);
-  const pg = playgroundHref(c.env);
 
   if (!userId) {
     return c.redirect("/login");
@@ -370,6 +463,53 @@ export const POST = createRoute(async (c) => {
     }
   }
 
+  if (action === "set_member_role") {
+    const targetUserId = String(body.target_user_id ?? "");
+    const newRole = body.role === "admin" ? "admin" : "member";
+    try {
+      await setMemberRole(c.env.DB_CONTROL, {
+        orgId: resolved.orgId,
+        actorUserId: userId,
+        targetUserId,
+        role: newRole,
+      });
+      return c.redirect(`${redirectBase}?ok=1`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "変更に失敗しました";
+      return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  if (action === "remove_member") {
+    const targetUserId = String(body.target_user_id ?? "");
+    try {
+      await removeMember(c.env.DB_CONTROL, {
+        orgId: resolved.orgId,
+        actorUserId: userId,
+        targetUserId,
+      });
+      return c.redirect(`${redirectBase}?ok=1`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "削除に失敗しました";
+      return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  if (action === "transfer_ownership") {
+    const targetUserId = String(body.target_user_id ?? "");
+    try {
+      await transferOwnership(c.env.DB_CONTROL, {
+        orgId: resolved.orgId,
+        actorUserId: userId,
+        targetUserId,
+      });
+      return c.redirect(`${redirectBase}?ok=1`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "移譲に失敗しました";
+      return c.redirect(`${redirectBase}?e=${encodeURIComponent(msg)}`);
+    }
+  }
+
   if (action === "revoke_invite") {
     const inviteId = String(body.invite_id ?? "");
     try {
@@ -413,27 +553,38 @@ export const POST = createRoute(async (c) => {
       const origin = new URL(c.req.url).origin;
       const inviteUrl = `${origin}/invite/${encodeURIComponent(plainToken)}`;
 
+      let emailNote: { ok: boolean; text: string } | null = null;
       if (channel === "email" && invitedEmail) {
-        await sendTransactionalEmail(c.env, {
+        const res = await sendTransactionalEmail(c.env, {
           to: invitedEmail,
           subject: `${resolved.name} からの Wana 招待`,
           text: `次のリンクから参加できます（期限内・回数制限あり）:\n${inviteUrl}\n`,
         });
+        emailNote = res.ok
+          ? { ok: true, text: `${invitedEmail} 宛にメールを送信しました。` }
+          : {
+              ok: false,
+              text: `メール送信は行われませんでした（${res.error ?? "未設定"}）。上の URL を手動で共有してください。`,
+            };
       }
 
       return c.render(
-        <Shell title="招待を作成しました" playgroundUrl={pg} auth="signed-in">
+        <Shell title="招待を作成しました" auth="signed-in">
           <PageHeader
             title="招待 URL（この画面を離れると再表示できません）"
             description="リンクをコピーして共有してください。"
           />
           <Card className="max-w-3xl space-y-4 p-6">
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-zinc-800 bg-zinc-950/80 p-4 font-mono text-sm text-amber-100/90">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-kumo-hairline bg-kumo-recessed p-4 font-mono text-sm text-amber-100/90">
               {inviteUrl}
             </pre>
-            <p className="text-xs text-zinc-500">
-              メールチャネルかつ SMTP 設定済みの場合、宛先へも送信済みです。
-            </p>
+            {emailNote ? (
+              <p
+                className={`text-xs ${emailNote.ok ? "text-emerald-400" : "text-amber-400"}`}
+              >
+                {emailNote.text}
+              </p>
+            ) : null}
             <TextLink href={redirectBase}>← チーム設定へ</TextLink>
           </Card>
         </Shell>,

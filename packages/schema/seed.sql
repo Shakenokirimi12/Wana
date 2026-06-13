@@ -1,6 +1,7 @@
 -- Seed data for local development
 -- Test DSN Key: wana_test_key_abc123
--- Hash: 2c70e12b7a0646f92279f427c7b38e7334d8e5389cff167a1dc30e73f826b683
+-- Hash: ed27438c10f665d539dbf799083c1ecafe536c8baa0b341759a9dc198f7fa7c8
+--   (= SHA-256 hex of the key above; must match hashHex() in @wana/core used by ingest auth)
 --
 -- projects.do_id: either 64-hex from newUniqueId().toString() (dashboard "New project"), or a stable
 -- idFromName key (e.g. wana:proj_01) for seeds — arbitrary hex is not valid in the DO namespace.
@@ -31,7 +32,7 @@ INSERT INTO api_keys (id, project_id, key_hash, hint, is_active, created_at)
 VALUES (
   'key_01',
   'proj_01',
-  '2c70e12b7a0646f92279f427c7b38e7334d8e5389cff167a1dc30e73f826b683',
+  'ed27438c10f665d539dbf799083c1ecafe536c8baa0b341759a9dc198f7fa7c8',
   'wana_test_...c123',
   1,
   1714665600000

@@ -1,6 +1,7 @@
 import { createRoute } from "honox/factory";
 
 import { bootstrapUserFromInvite } from "@/data/control-plane";
+import { isOpenSignupEnabled } from "@/lib/dashboard-user";
 
 export const POST = createRoute(async (c) => {
   let body: { token?: string; email?: string };
@@ -18,7 +19,12 @@ export const POST = createRoute(async (c) => {
     return c.json({ error: "missing_token" }, 400);
   }
 
-  const result = await bootstrapUserFromInvite(c.env.DB_CONTROL, token, email);
+  const result = await bootstrapUserFromInvite(
+    c.env.DB_CONTROL,
+    token,
+    email,
+    isOpenSignupEnabled(c.env)
+  );
   if (result.ok) {
     return c.json({
       ok: true,

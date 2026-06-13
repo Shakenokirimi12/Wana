@@ -7,7 +7,6 @@ import {
 } from "@/data/control-plane";
 import {
   getDashboardUserId,
-  playgroundHref,
 } from "@/lib/dashboard-user";
 import {
   ButtonPrimary,
@@ -21,7 +20,6 @@ import { Shell } from "@/ui/shell";
 
 export default createRoute(async (c) => {
   const raw = c.req.param("token") ?? "";
-  const pg = playgroundHref(c.env);
   const uid = getDashboardUserId(c);
   const qErr = c.req.query("e");
 
@@ -32,7 +30,7 @@ export default createRoute(async (c) => {
     return c.render(
       <Shell
         title="Invitation"
-        playgroundUrl={pg}
+
         auth="signed-out"
         loginNext={loginNext}
       >
@@ -68,7 +66,7 @@ export default createRoute(async (c) => {
   return c.render(
     <Shell
       title="Invitation"
-      playgroundUrl={pg}
+
       auth={uid ? "signed-in" : "signed-out"}
       loginNext={uid ? undefined : loginNext}
     >
@@ -76,7 +74,7 @@ export default createRoute(async (c) => {
         title={`${details.orgName} への招待`}
         description={
           <>
-            ロール: <span className="text-zinc-300">{details.role}</span>
+            ロール: <span className="text-kumo-default">{details.role}</span>
             {" · "}
             利用 {details.useCount}/{details.maxUses}
             {" · "}
@@ -95,7 +93,7 @@ export default createRoute(async (c) => {
 
       {expired || depleted ? (
         <Card className="max-w-lg p-6">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-kumo-subtle">
             {expired
               ? "この招待の有効期限が切れています。"
               : "この招待の利用回数が上限に達しています。"}
@@ -103,7 +101,7 @@ export default createRoute(async (c) => {
         </Card>
       ) : !uid ? (
         <Card className="max-w-lg space-y-6 p-6">
-          <p className="text-sm leading-relaxed text-zinc-400">
+          <p className="text-sm leading-relaxed text-kumo-subtle">
             参加するにはアカウントが必要です。既にアカウントがある場合はログインし、はじめての場合はこの招待から新規作成してください。
           </p>
           <div className="flex flex-col gap-3">
@@ -118,7 +116,7 @@ export default createRoute(async (c) => {
               新規アカウントを作成
             </LinkOutline>
           </div>
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-kumo-subtle">
             新規作成ではメール（招待で指定されている場合は固定）とパスキーを登録します。
           </p>
         </Card>
@@ -130,7 +128,7 @@ export default createRoute(async (c) => {
       ) : (
         <Card className="max-w-lg space-y-6 p-6">
           <form method="post" action={`/invite/${encodeURIComponent(raw)}`}>
-            <p className="mb-4 text-sm text-zinc-400">
+            <p className="mb-4 text-sm text-kumo-subtle">
               「参加する」でチームに追加されます。
             </p>
             <ButtonPrimary type="submit">このチームに参加する</ButtonPrimary>

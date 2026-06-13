@@ -44,6 +44,9 @@ export type Env = {
    */
   WEBAUTHN_ALLOW_EMAIL_ENROLLMENT?: string;
 
+  /** When "true", anyone may self-register an account (open signup). Default off. */
+  ALLOW_OPEN_SIGNUP?: string;
+
   /**
    * Optional service binding to the WebAuthn auth plugin Worker (`plugins/webauthn-worker`).
    * When absent, the dashboard runs the same handlers in-process via `@wana/auth-plugin-handlers`.

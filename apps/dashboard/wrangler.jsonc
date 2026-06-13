@@ -4,18 +4,22 @@
   "compatibility_date": "2026-05-02",
   "pages_build_output_dir": "./dist",
   "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
   // SYSTEM_CONFIG KV id is synced from apps/worker — run `pnpm provision:system-config-kv` once
   "kv_namespaces": [
     {
       "binding": "SYSTEM_CONFIG",
-      "id": "placeholder-kv-id"
+      "id": "10923c906f13434f8a573b15d5f5adcc"
     }
   ],
   "d1_databases": [
     {
       "binding": "DB_CONTROL",
       "database_name": "wana-control-plane",
-      "database_id": "placeholder-d1-id"
+      "database_id": "22092b33-3345-4efe-b9d3-298ba9c47bb0",
+      "migrations_dir": "../../packages/schema/migrations"
     }
   ],
   "r2_buckets": [
@@ -24,19 +28,31 @@
       "bucket_name": "wana-payloads"
     }
   ],
-  "send_email": [
-    {
-      "name": "SEND_MAIL"
-    }
-  ],
+  // Top-level vars are the LOCAL DEV defaults (used by `pnpm preview` /
+  // `pnpm dev`). Production deploys override these via env.production below so
+  // the localhost ingest URL, dev-fallback flag, and example MAIL_FROM never
+  // ship to wana-dashboard.pages.dev.
   "vars": {
     "INGEST_PUBLIC_URL": "http://127.0.0.1:8787",
     "DASHBOARD_USER_ID": "user_01",
     "DASHBOARD_DEV_FALLBACK": "true",
     "MAIL_FROM": "noreply@example.com",
-    "SENTRY_PLAYGROUND_URL": "http://127.0.0.1:8790",
     "WEBAUTHN_RP_NAME": "Wana",
-    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true"
+    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true",
+    "ALLOW_OPEN_SIGNUP": "true"
+  },
+  "env": {
+    "production": {
+      "vars": {
+        "INGEST_PUBLIC_URL": "https://wana-ingest.shakenokirimi12.workers.dev",
+        "DASHBOARD_USER_ID": "",
+        "DASHBOARD_DEV_FALLBACK": "false",
+        "MAIL_FROM": "noreply@example.com",
+        "WEBAUTHN_RP_NAME": "Wana",
+        "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "false",
+        "ALLOW_OPEN_SIGNUP": "true"
+      }
+    }
   },
   "durable_objects": {
     "bindings": [

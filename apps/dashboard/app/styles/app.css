@@ -1,6 +1,12 @@
 @import "tailwindcss";
+/* Cloudflare Kumo (Base UI + Tailwind v4)。tailwindcss の直後に読み込むこと。
+   kumo-* セマンティックトークンと light-dark() 自動テーマを提供する。 */
+@import "@cloudflare/kumo/styles/tailwind";
+/* kumo コンポーネントが内部で使う Tailwind ユーティリティ (bg-kumo-*, size-9 等) を
+   Tailwind v4 に生成させる。v4 は既定で node_modules を走査しないため明示が必須。 */
+@source "../../node_modules/@cloudflare/kumo/dist";
 
-/* Shadcn/ui は React + Radix 前提のため未導入。半径・リングは shadcn (zinc) に寄せたトークンを @theme で共有。 */
+/* 既存の手書き zinc コンポーネント (ui/components.tsx) は併用。半径・リングは shadcn (zinc) 寄せのトークンを @theme で共有。 */
 
 /* SSR + Vite は entry の CSS を dist/static に出さないことがある。?inline 注入の前提で、クラス検出対象を明示。 */
 @source "../**/*.{ts,tsx}";
@@ -21,8 +27,15 @@
 }
 
 @layer base {
+  /* テーマを OS 設定に追従させる。kumo は light-dark() で色を解決するため、
+     color-scheme を「light dark」にすると prefers-color-scheme に従う。
+     （kumo の binding は :root を light に固定するので、ここで上書きする） */
+  :root {
+    color-scheme: light dark;
+  }
+
   body {
-    background-color: var(--color-wana-bg);
+    background-color: var(--color-kumo-canvas);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }

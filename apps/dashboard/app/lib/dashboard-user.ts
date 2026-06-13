@@ -2,15 +2,41 @@ import type { Context } from "hono";
 
 import type { Env } from "../types/bindings";
 
-/** Matches session middleware: env fallback is only for local / staging. */
-export function isDashboardDevFallback(env: Env): boolean {
+/** True only for loopback hosts (local dev). Used to fence off dev-only auth. */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.replace(/:\d+$/, "").toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
+}
+
+/**
+ * Matches session middleware: env fallback is only for local dev.
+ * Hardened — even if `DASHBOARD_DEV_FALLBACK` is left "true" in a deployed
+ * config, it is IGNORED unless the request host is loopback. This prevents the
+ * "anyone with no cookie is user_01" auth bypass on a real domain.
+ */
+export function isDashboardDevFallback(
+  env: Env,
+  c?: Context<{ Bindings: Env }>
+): boolean {
   const v = env.DASHBOARD_DEV_FALLBACK;
-  return v === "true" || v === "1";
+  if (!(v === "true" || v === "1")) return false;
+  if (!c) return false;
+  try {
+    return isLoopbackHost(new URL(c.req.url).host);
+  } catch {
+    return false;
+  }
 }
 
 /** Email-based passkey enrollment without prior session (dev / controlled rollout only). */
 export function isWebAuthnEmailEnrollmentEnabled(env: Env): boolean {
   const v = env.WEBAUTHN_ALLOW_EMAIL_ENROLLMENT;
+  return v === "true" || v === "1";
+}
+
+/** Open self-service signup (anyone can create an account). Default off. */
+export function isOpenSignupEnabled(env: Env): boolean {
+  const v = env.ALLOW_OPEN_SIGNUP;
   return v === "true" || v === "1";
 }
 
@@ -36,7 +62,3 @@ export function ingestPublicOrigin(env: Env): string {
   return "http://127.0.0.1:8787";
 }
 
-export function playgroundHref(env: Env): string | undefined {
-  const u = env.SENTRY_PLAYGROUND_URL?.trim();
-  return u || undefined;
-}

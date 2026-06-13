@@ -4,8 +4,9 @@ import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import { eq, desc, sql, lt, inArray } from "drizzle-orm";
 import { issues, events } from "@wana/schema/data-plane";
 import migrations from "@wana/schema/data-plane-migrations";
-import type { ParsedEnvelope, SentryException, IssueStatus } from "@wana/types";
+import type { ParsedEnvelope, IssueStatus } from "@wana/types";
 import type { Env } from "../types";
+import { parseEventFromEnvelope, type ExtractedEventMetadata } from "../lib/event-parser";
 
 interface EventInput {
   envelope: ParsedEnvelope;
@@ -100,110 +101,100 @@ export class ProjectDataStore extends DurableObject<Env> {
   }
 
   async insertEvents(eventInputs: EventInput[]): Promise<void> {
-    for (const event of eventInputs) {
-      const { envelope, r2Key, receivedAt } = event;
-      const eventId = envelope.header.event_id;
+    const parsedItems = eventInputs
+      .map((e) => ({
+        meta: parseEventFromEnvelope(e.envelope, e.receivedAt),
+        eventId: e.envelope.header.event_id,
+        r2Key: e.r2Key,
+      }))
+      .filter((x) => x.meta !== null) as {
+      meta: ExtractedEventMetadata;
+      eventId: string;
+      r2Key: string;
+    }[];
 
-      // Extract exception info from the first event item
-      const eventItem = envelope.items.find(
-        (item) => item.header.type === "event" || item.header.type === "error"
+    if (parsedItems.length === 0) return;
+
+    // Group items by fingerprint to handle batching within a single DO request
+    const groups = new Map<string, typeof parsedItems>();
+    for (const item of parsedItems) {
+      const list = groups.get(item.meta.fingerprint) || [];
+      list.push(item);
+      groups.set(item.meta.fingerprint, list);
+    }
+
+    for (const [fingerprint, items] of groups.entries()) {
+      const latestItem = items.reduce((prev, curr) =>
+        curr.meta.timestamp > prev.meta.timestamp ? curr : prev
       );
-      if (!eventItem) continue;
-
-      const payload = eventItem.payload as {
-        exception?: { values: SentryException[] };
-        environment?: string;
-        release?: string;
-        timestamp?: number;
-        message?: unknown;
-        level?: string;
-        logger?: string;
-      };
-
-      const exception = payload.exception?.values?.[0];
-      const msg =
-        typeof payload.message === "string" && payload.message.length > 0
-          ? payload.message
-          : null;
-
-      if (!exception && !msg) continue;
-
-      const fingerprint = exception
-        ? this.calculateFingerprint(exception)
-        : this.calculateMessageFingerprint(
-            msg!,
-            payload.level,
-            payload.logger
-          );
-
-      const issueException: SentryException = exception ?? {
-        type: (payload.level?.toUpperCase() ?? "MESSAGE") as string,
-        value: msg!,
-        stacktrace: undefined,
-      };
-      const timestamp = new Date(
-        payload.timestamp ? payload.timestamp * 1000 : receivedAt
+      const earliestItem = items.reduce((prev, curr) =>
+        curr.meta.timestamp < prev.meta.timestamp ? curr : prev
       );
 
-      let culprit: string | null = null;
-      if (issueException.stacktrace?.frames?.length) {
-        const topFrame =
-          issueException.stacktrace.frames[
-            issueException.stacktrace.frames.length - 1
-          ];
-        if (topFrame?.filename) {
-          culprit = topFrame.lineno
-            ? `${topFrame.filename}:${topFrame.lineno}`
-            : topFrame.filename;
-        }
-      } else if (payload.logger) {
-        culprit = payload.logger;
-      }
-
-      // Check if issue exists
-      const existingIssue = await this.db
+      // Find-or-create the issue first (events.issueId FK).
+      const existing = await this.db
         .select({ id: issues.id })
         .from(issues)
         .where(eq(issues.fingerprint, fingerprint))
         .limit(1);
 
       let issueId: string;
-
-      if (existingIssue.length > 0) {
-        // Update existing issue
-        issueId = existingIssue[0].id;
-        await this.db
-          .update(issues)
-          .set({
-            eventsCount: sql`${issues.eventsCount} + 1`,
-            lastSeen: timestamp,
-          })
-          .where(eq(issues.id, issueId));
+      let issueIsNew = false;
+      if (existing.length > 0) {
+        issueId = existing[0].id;
       } else {
-        // Create new issue
         issueId = crypto.randomUUID();
+        issueIsNew = true;
         await this.db.insert(issues).values({
           id: issueId,
           fingerprint,
-          type: issueException.type,
-          value: issueException.value,
+          type: latestItem.meta.type,
+          value: latestItem.meta.value,
           status: "unresolved",
-          eventsCount: 1,
-          firstSeen: timestamp,
-          lastSeen: timestamp,
-          culprit,
+          eventsCount: 0,
+          firstSeen: earliestItem.meta.timestamp,
+          lastSeen: latestItem.meta.timestamp,
+          culprit: latestItem.meta.culprit,
         });
       }
 
-      // Insert event
-      await this.db.insert(events).values({
-        id: eventId,
-        issueId,
-        timestamp,
-        environment: payload.environment || null,
-        release: payload.release || null,
-        r2PayloadKey: r2Key,
-      });
+      // Idempotent insert: duplicate event_id (SDK retries / queue redelivery)
+      // is ignored. `returning` gives us the rows that were actually inserted so
+      // eventsCount reflects only NEW events — no double-counting, no poison loop.
+      const inserted = await this.db
+        .insert(events)
+        .values(
+          items.map((item) => ({
+            id: item.eventId,
+            issueId,
+            timestamp: item.meta.timestamp,
+            environment: item.meta.environment,
+            release: item.meta.release,
+            r2PayloadKey: item.r2Key,
+          }))
+        )
+        .onConflictDoNothing()
+        .returning({ id: events.id });
+
+      const newCount = inserted.length;
+      if (newCount > 0) {
+        await this.db
+          .update(issues)
+          .set({
+            eventsCount: sql`${issues.eventsCount} + ${newCount}`,
+            // Out-of-order delivery (queue redelivery / late SDK flush) must not
+            // regress lastSeen — keep the newest.
+            lastSeen: sql`max(${issues.lastSeen}, ${latestItem.meta.timestamp.getTime()})`,
+            // ...and a late event that is OLDER than the recorded firstSeen must
+            // pull firstSeen back to the true earliest occurrence.
+            firstSeen: sql`min(${issues.firstSeen}, ${earliestItem.meta.timestamp.getTime()})`,
+          })
+          .where(eq(issues.id, issueId));
+      } else if (issueIsNew) {
+        // Every event in a brand-new issue was a duplicate (re-delivery after a
+        // mid-batch crash). Drop the empty issue row to avoid a count=0 orphan.
+        await this.db.delete(issues).where(eq(issues.id, issueId));
+      }
     }
 
     // Schedule alarm for data retention cleanup
@@ -215,39 +206,14 @@ export class ProjectDataStore extends DurableObject<Env> {
     this.ctx.waitUntil(this.broadcastIssuesSnapshot());
   }
 
-  private calculateFingerprint(exception: SentryException): string {
-    const parts = [exception.type, exception.value];
-    if (exception.stacktrace?.frames?.length) {
-      const topFrame =
-        exception.stacktrace.frames[exception.stacktrace.frames.length - 1];
-      if (topFrame) {
-        parts.push(
-          topFrame.filename || "",
-          topFrame.function || "",
-          String(topFrame.lineno || "")
-        );
-      }
-    }
-    return parts.join("::");
-  }
-
-  /** Group non-exception message events (captureMessage / logger). */
-  private calculateMessageFingerprint(
-    message: string,
-    level?: string,
-    logger?: string
-  ): string {
-    return ["message", level ?? "info", message, logger ?? ""].join("::");
-  }
-
   // RPC methods for dashboard
   async getIssues(options?: {
     status?: IssueStatus;
     limit?: number;
     offset?: number;
   }) {
-    const limit = options?.limit || 50;
-    const offset = options?.offset || 0;
+    const limit = Math.min(Math.max(options?.limit || 50, 1), 200);
+    const offset = Math.max(options?.offset || 0, 0);
     const status = options?.status;
 
     if (status) {
@@ -304,8 +270,8 @@ export class ProjectDataStore extends DurableObject<Env> {
   }
 
   async getEvents(issueId: string, options?: { limit?: number; offset?: number }) {
-    const limit = options?.limit || 50;
-    const offset = options?.offset || 0;
+    const limit = Math.min(Math.max(options?.limit || 50, 1), 200);
+    const offset = Math.max(options?.offset || 0, 0);
 
     return this.db
       .select()
@@ -324,43 +290,83 @@ export class ProjectDataStore extends DurableObject<Env> {
     this.ctx.waitUntil(this.broadcastIssuesSnapshot());
   }
 
-  // Alarm handler for data retention (D1 spec §6.2: events + linked R2)
-  async alarm(): Promise<void> {
-    const retentionDays = 30;
-    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-
-    const staleRows = await this.db
+  /**
+   * Hard-delete ALL data for this project: every R2 payload, every event, every
+   * issue. Used by project deletion (control plane deletes its rows separately).
+   */
+  async purgeAllData(): Promise<{ deletedEvents: number }> {
+    const rows = await this.db
       .select({ r2: events.r2PayloadKey })
-      .from(events)
-      .where(lt(events.timestamp, cutoff));
-
-    const seenKeys = new Set<string>();
-    for (const row of staleRows) {
-      if (seenKeys.has(row.r2)) continue;
-      seenKeys.add(row.r2);
-      await this.workerEnv.PAYLOAD_STORAGE.delete(row.r2);
+      .from(events);
+    const keys = [...new Set(rows.map((r) => r.r2))];
+    for (let i = 0; i < keys.length; i += 1000) {
+      await this.workerEnv.PAYLOAD_STORAGE.delete(keys.slice(i, i + 1000));
     }
+    await this.db.delete(events);
+    await this.db.delete(issues);
+    this.ctx.waitUntil(this.broadcastIssuesSnapshot());
+    return { deletedEvents: rows.length };
+  }
 
-    await this.db.delete(events).where(lt(events.timestamp, cutoff));
+  /** Retention window in days. Override via SYSTEM_CONFIG KV `RETENTION_DAYS`. */
+  private async resolveRetentionDays(): Promise<number> {
+    try {
+      const raw = await this.workerEnv.SYSTEM_CONFIG.get("RETENTION_DAYS");
+      const n = raw ? Number.parseInt(raw, 10) : NaN;
+      if (Number.isFinite(n) && n >= 1) return n;
+    } catch {
+      // fall through to default
+    }
+    return 30;
+  }
 
-    const orphans = await this.db
-      .select({ id: issues.id })
-      .from(issues)
-      .where(
-        sql`NOT EXISTS (SELECT 1 FROM events WHERE events.issue_id = issues.id)`
-      );
+  // Alarm handler for data retention (D1 spec §6.2: events + linked R2).
+  // Wrapped so the alarm is ALWAYS re-armed — a failed cleanup pass must not
+  // permanently halt retention and orphan R2 objects forever.
+  async alarm(): Promise<void> {
+    try {
+      const retentionDays = await this.resolveRetentionDays();
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-    if (orphans.length > 0) {
-      await this.db
-        .delete(issues)
+      const staleRows = await this.db
+        .select({ r2: events.r2PayloadKey })
+        .from(events)
+        .where(lt(events.timestamp, cutoff));
+
+      const keys = [...new Set(staleRows.map((r) => r.r2))];
+      // R2 delete accepts up to 1000 keys per call.
+      for (let i = 0; i < keys.length; i += 1000) {
+        await this.workerEnv.PAYLOAD_STORAGE.delete(keys.slice(i, i + 1000));
+      }
+
+      // NOTE: issues.eventsCount is a LIFETIME-cumulative total (matches Sentry's
+      // "times seen" semantics) — it is intentionally NOT decremented when stale
+      // event rows are purged here. So an old issue can legitimately report a
+      // count larger than the number of event rows currently retained. Issues
+      // whose events are ALL purged become orphans and are deleted just below.
+      await this.db.delete(events).where(lt(events.timestamp, cutoff));
+
+      const orphans = await this.db
+        .select({ id: issues.id })
+        .from(issues)
         .where(
-          inArray(
-            issues.id,
-            orphans.map((o) => o.id)
-          )
+          sql`NOT EXISTS (SELECT 1 FROM events WHERE events.issue_id = issues.id)`
         );
-    }
 
-    await this.ctx.storage.setAlarm(Date.now() + 24 * 60 * 60 * 1000);
+      if (orphans.length > 0) {
+        await this.db
+          .delete(issues)
+          .where(
+            inArray(
+              issues.id,
+              orphans.map((o) => o.id)
+            )
+          );
+      }
+    } catch (error) {
+      console.error("Retention alarm cleanup failed:", error);
+    } finally {
+      await this.ctx.storage.setAlarm(Date.now() + 24 * 60 * 60 * 1000);
+    }
   }
 }
