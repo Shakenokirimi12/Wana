@@ -28,31 +28,24 @@
       "bucket_name": "wana-payloads"
     }
   ],
-  // Top-level vars are the LOCAL DEV defaults (used by `pnpm preview` /
-  // `pnpm dev`). Production deploys override these via env.production below so
-  // the localhost ingest URL, dev-fallback flag, and example MAIL_FROM never
-  // ship to wana-dashboard.pages.dev.
+  // Pages does NOT inherit bindings into per-environment overrides — declaring
+  // an `env.production` block would silently drop KV/D1/R2/DO bindings and 500.
+  // So these stay as top-level production values; local dev overrides them via
+  // `.dev.vars` or the `--var` flag in the preview-stack script.
   "vars": {
-    "INGEST_PUBLIC_URL": "http://127.0.0.1:8787",
-    "DASHBOARD_USER_ID": "user_01",
-    "DASHBOARD_DEV_FALLBACK": "true",
+    "INGEST_PUBLIC_URL": "https://ingest.wana.shakenokiri.me",
+    "DASHBOARD_USER_ID": "",
+    "DASHBOARD_DEV_FALLBACK": "false",
     "MAIL_FROM": "noreply@example.com",
     "WEBAUTHN_RP_NAME": "Wana",
+    "WEBAUTHN_RP_ID": "wana.shakenokiri.me",
+    "WEBAUTHN_ORIGIN": "https://wana.shakenokiri.me",
+    // Temporarily enabled so the brand domain can register a fresh passkey
+    // (RP id changed from wana-dashboard.pages.dev → wana.shakenokiri.me so
+    // existing credentials no longer validate). Revert to "false" after the
+    // owner has re-enrolled on the new domain.
     "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true",
     "ALLOW_OPEN_SIGNUP": "true"
-  },
-  "env": {
-    "production": {
-      "vars": {
-        "INGEST_PUBLIC_URL": "https://wana-ingest.shakenokirimi12.workers.dev",
-        "DASHBOARD_USER_ID": "",
-        "DASHBOARD_DEV_FALLBACK": "false",
-        "MAIL_FROM": "noreply@example.com",
-        "WEBAUTHN_RP_NAME": "Wana",
-        "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "false",
-        "ALLOW_OPEN_SIGNUP": "true"
-      }
-    }
   },
   "durable_objects": {
     "bindings": [
