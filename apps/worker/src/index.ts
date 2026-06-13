@@ -5,8 +5,12 @@ import { durableObjectIdForStoredProject } from "@wana/core";
 
 export { ProjectDataStore };
 
-/** Sentry event ids are 32 hex chars. Validate before using as an R2 key / DO PK. */
-const EVENT_ID_RE = /^[0-9a-f]{32}$/i;
+/**
+ * Sentry event ids are 32 hex chars, but some SDKs/tools send a dashed UUID.
+ * Accept hex + dashes (32–36 chars) — still path-safe (no `/`, `.`, `..`) for
+ * use as an R2 key / DO PK — and reject anything else.
+ */
+const EVENT_ID_RE = /^[0-9a-f-]{32,36}$/i;
 
 export default {
   async fetch(request: Request): Promise<Response> {
