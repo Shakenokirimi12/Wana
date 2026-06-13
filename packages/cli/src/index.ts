@@ -78,12 +78,15 @@ function wrangler(args: string[]): { ok: boolean; out: string } {
   return run("pnpm", ["exec", "wrangler", ...args], WORKER_DIR);
 }
 
-/** Replace a `"key": "value"` (or `key = "value"`) in a JSONC/TOML-ish file. */
+/**
+ * Replace the value of a fully-quoted JSON key: `"key": "value"`.
+ * The key MUST be quoted on both sides so `"id"` does not also match inside
+ * `"database_id"` (which would corrupt the D1 binding with the KV id).
+ */
 function patchConfigValue(file: string, key: string, value: string): boolean {
   if (!existsSync(file)) return false;
   const src = readFileSync(file, "utf8");
-  // Matches `"database_id": "..."` and `database_id = "..."` forms.
-  const re = new RegExp(`("?${key}"?\\s*[:=]\\s*")([^"]*)(")`);
+  const re = new RegExp(`("${key}"\\s*:\\s*")([^"]*)(")`);
   if (!re.test(src)) return false;
   const next = src.replace(re, `$1${value}$3`);
   if (next === src) return false;

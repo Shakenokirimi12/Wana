@@ -179,5 +179,11 @@ export async function inviteTokenAllowsWebAuthnRegistration(
     return false;
   }
   const user = await getUserByEmail(d1, email);
-  return !!user;
+  if (!user) return false;
+  // Registration via invite is FIRST-passkey enrollment only. A user who
+  // already has a credential must log in (not register) to accept another
+  // invite — otherwise a holder of any open invite could enroll their own
+  // passkey on an existing account (account takeover).
+  const creds = await listWebAuthnCredentialIdsForUser(d1, user.id);
+  return creds.length === 0;
 }

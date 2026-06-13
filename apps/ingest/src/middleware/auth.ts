@@ -5,9 +5,13 @@ import { apiKeys, projects } from "@wana/schema/control-plane";
 import { extractSentryKeyFromRequest, hashHex as hashDsn } from "@wana/core";
 import type { Env } from "../types";
 
-// In-memory cache for authentication results (Worker isolates reuse this Map)
+// In-memory cache for authentication results (Worker isolates reuse this Map).
+// NOTE: this is the revocation latency — a disabled key / deleted project keeps
+// authenticating in a warm isolate until its entry expires. Kept short so revoke
+// takes effect quickly; bounded so it can't grow without limit.
 const AUTH_CACHE = new Map<string, { projectId: string; doId: string; expiresAt: number }>();
-const CACHE_TTL_MS = 60 * 1000;
+const CACHE_TTL_MS = 10 * 1000;
+const AUTH_CACHE_MAX = 5000;
 
 export const authMiddleware = createMiddleware<{ Bindings: Env }>(
   async (c, next) => {
@@ -60,7 +64,10 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(
       return c.json({ error: "API key is disabled" }, 401);
     }
 
-    // Cache the successful authentication
+    // Cache the successful authentication (bounded: clear when full).
+    if (AUTH_CACHE.size >= AUTH_CACHE_MAX) {
+      AUTH_CACHE.clear();
+    }
     AUTH_CACHE.set(cacheKey, {
       projectId: apiKey.projectId,
       doId: apiKey.doId,

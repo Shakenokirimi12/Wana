@@ -24,7 +24,7 @@ app.post("/api/:projectId/envelope/", authMiddleware, async (c) => {
 
   try {
     const body = await c.req.text();
-    if (body.length > MAX_ENVELOPE_BYTES) {
+    if (new TextEncoder().encode(body).byteLength > MAX_ENVELOPE_BYTES) {
       return c.json({ error: "Payload too large" }, 413);
     }
     const parsed = parseEnvelope(body);
@@ -62,7 +62,7 @@ app.post("/api/:projectId/store/", authMiddleware, async (c) => {
 
   try {
     const raw = await c.req.text();
-    if (raw.length > MAX_ENVELOPE_BYTES) {
+    if (new TextEncoder().encode(raw).byteLength > MAX_ENVELOPE_BYTES) {
       return c.json({ error: "Payload too large" }, 413);
     }
     const payload = JSON.parse(raw);

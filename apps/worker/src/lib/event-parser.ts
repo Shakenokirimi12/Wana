@@ -45,9 +45,16 @@ export function parseEventFromEnvelope(
     stacktrace: undefined,
   };
 
-  const timestamp = new Date(
-    payload.timestamp ? payload.timestamp * 1000 : receivedAt
-  );
+  // Untrusted SDK timestamp: clamp to a sane window so a client can't pin an
+  // issue at the top of the stream forever (future) or defer its retention for
+  // decades. Allow small forward skew; floor implausibly-old values to receivedAt.
+  const MAX_SKEW_MS = 60_000;
+  const rawTs = payload.timestamp ? payload.timestamp * 1000 : receivedAt;
+  const clamped =
+    !Number.isFinite(rawTs) || rawTs > receivedAt + MAX_SKEW_MS || rawTs <= 0
+      ? receivedAt
+      : rawTs;
+  const timestamp = new Date(clamped);
 
   let culprit: string | null = null;
   if (issueException.stacktrace?.frames?.length) {

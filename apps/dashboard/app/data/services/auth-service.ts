@@ -334,7 +334,11 @@ export async function inviteTokenAllowsWebAuthnRegistration(
   if (!normalized) return false;
   if (details.invitedEmail && details.invitedEmail.toLowerCase() !== normalized) return false;
   const user = await getUserByEmail(d1, email);
-  return !!user;
+  if (!user) return false;
+  // First-passkey enrollment only (see db.ts): block enrolling a credential on
+  // an account that already has one via an invite — prevents account takeover.
+  const creds = await listWebAuthnCredentialIdsForUser(d1, user.id);
+  return creds.length === 0;
 }
 
 export async function bootstrapUserFromInvite(

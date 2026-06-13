@@ -182,7 +182,9 @@ export class ProjectDataStore extends DurableObject<Env> {
           .update(issues)
           .set({
             eventsCount: sql`${issues.eventsCount} + ${newCount}`,
-            lastSeen: latestItem.meta.timestamp,
+            // Out-of-order delivery (queue redelivery / late SDK flush) must not
+            // regress lastSeen — keep the newest.
+            lastSeen: sql`max(${issues.lastSeen}, ${latestItem.meta.timestamp.getTime()})`,
           })
           .where(eq(issues.id, issueId));
       } else if (issueIsNew) {
