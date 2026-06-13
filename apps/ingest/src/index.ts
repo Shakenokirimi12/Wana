@@ -6,6 +6,11 @@ import type { Env } from "./types";
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Cloudflare Queues cap a message at 128 KB; the envelope is the bulk of the
+// message body. Reject oversized payloads early with 413 instead of failing
+// opaquely at send() time.
+const MAX_ENVELOPE_BYTES = 110_000;
+
 app.use("*", cors());
 
 app.get("/health", (c) => {
@@ -19,6 +24,9 @@ app.post("/api/:projectId/envelope/", authMiddleware, async (c) => {
 
   try {
     const body = await c.req.text();
+    if (body.length > MAX_ENVELOPE_BYTES) {
+      return c.json({ error: "Payload too large" }, 413);
+    }
     const parsed = parseEnvelope(body);
 
     if (parsed.kind === "malformed") {
@@ -53,7 +61,11 @@ app.post("/api/:projectId/store/", authMiddleware, async (c) => {
   const doId = c.get("doId");
 
   try {
-    const payload = await c.req.json();
+    const raw = await c.req.text();
+    if (raw.length > MAX_ENVELOPE_BYTES) {
+      return c.json({ error: "Payload too large" }, 413);
+    }
+    const payload = JSON.parse(raw);
     const eventId = payload.event_id || crypto.randomUUID();
 
     const envelope = {
