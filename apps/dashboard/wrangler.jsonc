@@ -8,25 +8,21 @@
   "kv_namespaces": [
     {
       "binding": "SYSTEM_CONFIG",
-      "id": "placeholder-kv-id"
+      "id": "10923c906f13434f8a573b15d5f5adcc"
     }
   ],
   "d1_databases": [
     {
       "binding": "DB_CONTROL",
       "database_name": "wana-control-plane",
-      "database_id": "placeholder-d1-id"
+      "database_id": "22092b33-3345-4efe-b9d3-298ba9c47bb0",
+      "migrations_dir": "../../packages/schema/migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "PAYLOAD_STORAGE",
       "bucket_name": "wana-payloads"
-    }
-  ],
-  "send_email": [
-    {
-      "name": "SEND_MAIL"
     }
   ],
   "vars": {

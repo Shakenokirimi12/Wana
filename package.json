@@ -5,14 +5,18 @@
   "description": "Cloudflare Native Error Tracker - Sentry-compatible, self-hostable",
   "scripts": {
     "dev": "turbo run dev --filter=@wana/ingest --filter=@wana/worker --filter=@wana/dashboard",
+    "dev:dashboard": "pnpm --filter @wana/dashboard dev",
     "dev:playground": "pnpm --filter @wana/sentry-playground dev",
+    "clean:dev": "bash scripts/clean-dev.sh",
     "preview": "bash scripts/preview-stack.sh",
     "test:stack": "bash scripts/smoke-stack.sh",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
     "db:generate": "turbo run db:generate --filter=@wana/schema",
-    "db:migrate": "turbo run db:migrate --filter=@wana/schema",
+    "db:migrate": "turbo run db:migrate --filter=@wana/ingest",
+    "db:migrate:remote": "turbo run db:migrate:remote --filter=@wana/ingest",
     "wana": "wana",
     "deploy:cloud": "wana deploy",
     "provision:system-config-kv": "pnpm --filter @wana/worker exec wrangler kv namespace create wana-system-config --binding SYSTEM_CONFIG --update-config && node scripts/sync-system-config-kv.mjs",
@@ -31,6 +35,7 @@
     "@wana/cli": "workspace:*",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",
+    "vitest": "^4.1.5",
     "wait-on": "^9.0.5"
   }
 }

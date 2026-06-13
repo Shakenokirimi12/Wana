@@ -81,25 +81,14 @@ SEED_MARKER="$PERSIST/.wana-preview-seeded"
 HAD_LOCAL_D1=0
 [[ -d "$PERSIST/v3/d1" ]] && HAD_LOCAL_D1=1
 
-echo "Applying D1 schema (local)…"
+# Drizzle-generated migrations (packages/schema/migrations) applied via wrangler's
+# D1 migration system. Wrangler tracks applied migrations in the d1_migrations table,
+# so re-running is idempotent — no marker files needed.
+echo "Applying D1 migrations (local)…"
 (
   cd "$REPO/apps/ingest"
-  pnpm exec wrangler d1 execute wana-control-plane --local --persist-to "$PERSIST" \
-    --file "$REPO/packages/schema/migrations/0001_initial.sql"
+  pnpm exec wrangler d1 migrations apply wana-control-plane --local --persist-to "$PERSIST"
 )
-
-SCHEMA_0002_MARKER="$PERSIST/.wana-migrated-0002"
-if [[ ! -f "$SCHEMA_0002_MARKER" ]]; then
-  echo "Applying D1 migration 0002 (sessions, username, invites, …)…"
-  (
-    cd "$REPO/apps/ingest"
-    pnpm exec wrangler d1 execute wana-control-plane --local --persist-to "$PERSIST" \
-      --file "$REPO/packages/schema/migrations/0002_auth_admin.sql"
-  )
-  touch "$SCHEMA_0002_MARKER"
-else
-  echo "Skip 0002 (marker present: $SCHEMA_0002_MARKER). Delete it to re-apply."
-fi
 
 # seed.sql wipes projects/api_keys — run only on fresh persist or explicit reset.
 if [[ "${WANNA_PREVIEW_RESET:-}" == "1" ]]; then

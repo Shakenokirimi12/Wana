@@ -14,10 +14,13 @@
     "shadcn": "pnpm dlx shadcn@latest"
   },
   "dependencies": {
-    "@wana/auth-plugin-handlers": "workspace:*",
+    "@cloudflare/kumo": "^2.5.2",
     "@hono/react-renderer": "^1.0.1",
+    "@phosphor-icons/react": "^2.1.10",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.0",
+    "@wana/auth-plugin-handlers": "workspace:*",
+    "@wana/core": "workspace:*",
     "@wana/schema": "workspace:*",
     "@wana/types": "workspace:*",
     "@wana/worker": "workspace:*",
