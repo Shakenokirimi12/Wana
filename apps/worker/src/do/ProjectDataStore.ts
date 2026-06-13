@@ -185,6 +185,9 @@ export class ProjectDataStore extends DurableObject<Env> {
             // Out-of-order delivery (queue redelivery / late SDK flush) must not
             // regress lastSeen — keep the newest.
             lastSeen: sql`max(${issues.lastSeen}, ${latestItem.meta.timestamp.getTime()})`,
+            // ...and a late event that is OLDER than the recorded firstSeen must
+            // pull firstSeen back to the true earliest occurrence.
+            firstSeen: sql`min(${issues.firstSeen}, ${earliestItem.meta.timestamp.getTime()})`,
           })
           .where(eq(issues.id, issueId));
       } else if (issueIsNew) {

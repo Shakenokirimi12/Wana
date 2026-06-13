@@ -301,6 +301,12 @@ export async function updateOrganizationDisplayName(
     .update(organizations)
     .set({ name })
     .where(eq(organizations.id, input.orgId));
+  await recordAuditEvent(d1, {
+    actorUserId: input.actingUserId,
+    orgId: input.orgId,
+    action: "org.rename",
+    payload: { name },
+  });
 }
 
 export async function updateOrganizationSlugWithRedirect(
@@ -354,6 +360,13 @@ export async function updateOrganizationSlugWithRedirect(
     .set({ slug })
     .where(eq(organizations.id, input.orgId));
 
+  await recordAuditEvent(d1, {
+    actorUserId: input.actingUserId,
+    orgId: input.orgId,
+    action: "org.slug_change",
+    payload: { oldSlug: currentSlug, newSlug: slug },
+  });
+
   return { slug };
 }
 
@@ -400,6 +413,13 @@ export async function createOrganization(
     orgId,
     userId: input.actingUserId,
     role: "owner",
+  });
+
+  await recordAuditEvent(d1, {
+    actorUserId: input.actingUserId,
+    orgId,
+    action: "org.create",
+    payload: { name, slug },
   });
 
   return { id: orgId, slug };

@@ -161,7 +161,18 @@ export async function getProjectRoleForUser(
   return (rows[0]?.role as OrgRole | undefined) ?? null;
 }
 
-export async function listApiKeysForProject(d1: D1Database, projectId: string) {
+export async function listApiKeysForProject(
+  d1: D1Database,
+  projectId: string,
+  actingUserId: string
+) {
+  // Defense-in-depth: the function never returns key hashes, but still verify
+  // the caller is a member of the project's org so it can't become an IDOR if a
+  // future caller forgets the precondition.
+  const role = await getProjectRoleForUser(d1, actingUserId, projectId);
+  if (!role) {
+    throw new Error("このプロジェクトの API キーを閲覧する権限がありません");
+  }
   const db = createDb(d1);
   return db
     .select({

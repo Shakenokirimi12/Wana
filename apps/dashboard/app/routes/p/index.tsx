@@ -501,7 +501,7 @@ projectsRoute.get("/:projectId/settings", async (c) => {
   if (!role) return c.redirect("/");
   const isAdmin = orgRoleAtLeast(role, "admin");
 
-  const keys = await listApiKeysForProject(c.env.DB_CONTROL, projectId);
+  const keys = await listApiKeysForProject(c.env.DB_CONTROL, projectId, uid);
   const issuedKey = c.req.query("key") ?? null;
   const err = c.req.query("err") ?? null;
 
