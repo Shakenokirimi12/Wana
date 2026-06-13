@@ -153,33 +153,18 @@ export function Shell(props: ShellProps) {
         <p className="text-center text-xs text-kumo-subtle">
           Wana — edge-native error tracking
         </p>
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs">
-          {auth === "signed-in" ? (
-            <a
-              className="font-medium text-kumo-subtle hover:text-kumo-default"
-              href="/logout"
-            >
-              Sign out
-            </a>
-          ) : auth === "signed-out" ? (
-            <a
-              className="font-medium text-kumo-brand hover:text-kumo-brand-hover"
-              href={signInHref}
-            >
-              Sign in
-            </a>
-          ) : null}
-          {props.playgroundUrl ? (
+        {props.playgroundUrl ? (
+          <div className="mt-4 flex justify-center text-xs">
             <a
               className="font-medium text-kumo-subtle hover:text-kumo-default"
               href={props.playgroundUrl}
               target="_blank"
               rel="noreferrer"
             >
-              Sentry ブラウザテスト (別タブ)
+              Sentry SDK テストページ (別タブ)
             </a>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </footer>
     </div>
   );
