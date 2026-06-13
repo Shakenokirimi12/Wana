@@ -35,7 +35,8 @@
     "MAIL_FROM": "noreply@example.com",
     "SENTRY_PLAYGROUND_URL": "http://127.0.0.1:8790",
     "WEBAUTHN_RP_NAME": "Wana",
-    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true"
+    "WEBAUTHN_ALLOW_EMAIL_ENROLLMENT": "true",
+    "ALLOW_OPEN_SIGNUP": "true"
   },
   "durable_objects": {
     "bindings": [

@@ -344,7 +344,8 @@ export async function inviteTokenAllowsWebAuthnRegistration(
 export async function bootstrapUserFromInvite(
   d1: D1Database,
   tokenPlain: string,
-  emailInput: string | undefined
+  emailInput: string | undefined,
+  allowOpenSignup = false
 ) {
   let email: string;
   let isBootstrap = false;
@@ -359,6 +360,16 @@ export async function bootstrapUserFromInvite(
     } else {
       return { ok: false as const, reason: "無効な招待です。" };
     }
+  } else if (tokenPlain === "open-signup") {
+    // Self-service signup: create an account for any new email, when enabled.
+    if (!allowOpenSignup) {
+      return { ok: false as const, reason: "セルフ登録は無効です。" };
+    }
+    const raw = emailInput?.trim().toLowerCase();
+    if (!raw || !SIMPLE_EMAIL_RE.test(raw)) {
+      return { ok: false as const, reason: "有効なメールアドレスを入力してください。" };
+    }
+    email = raw;
   } else {
     const details = await getInviteDetailsForAccept(d1, tokenPlain);
     if (!details) return { ok: false as const, reason: "無効な招待です。" };

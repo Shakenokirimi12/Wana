@@ -20,7 +20,11 @@ import {
   updateWebAuthnCredentialCounter,
 } from "./db.js";
 import type { AuthPluginEnv } from "./env.js";
-import { isWebAuthnEmailEnrollmentEnabled } from "./env.js";
+import {
+  isWebAuthnEmailEnrollmentEnabled,
+  isOpenSignupEnabled,
+  OPEN_SIGNUP_TOKEN,
+} from "./env.js";
 import {
   putWebAuthnChallenge,
   takeWebAuthnChallenge,
@@ -157,14 +161,17 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       typeof body.inviteToken === "string" ? body.inviteToken.trim() : "";
 
     const enrollment = isWebAuthnEmailEnrollmentEnabled(c.env);
+    const openSignup =
+      inviteToken === OPEN_SIGNUP_TOKEN && isOpenSignupEnabled(c.env);
     const inviteOk =
       inviteToken.length > 0 &&
+      inviteToken !== OPEN_SIGNUP_TOKEN &&
       (await inviteTokenAllowsWebAuthnRegistration(
         c.env.DB_CONTROL,
         inviteToken,
         email
       ));
-    if (!enrollment && !inviteOk) {
+    if (!enrollment && !inviteOk && !openSignup) {
       return c.json({ error: "enrollment_disabled" }, 403);
     }
 
@@ -178,6 +185,11 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       c.env.DB_CONTROL,
       user.id
     );
+    // Open signup is first-passkey enrollment only — never add a credential to
+    // an account that already has one via the open-signup token.
+    if (openSignup && existing.length > 0) {
+      return c.json({ error: "already_registered" }, 409);
+    }
 
     const uidBuf = new TextEncoder().encode(user.id);
     const options = await generateRegistrationOptions({
@@ -230,20 +242,33 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
     }
 
     const enrollment = isWebAuthnEmailEnrollmentEnabled(c.env);
+    const openSignup =
+      inviteToken === OPEN_SIGNUP_TOKEN && isOpenSignupEnabled(c.env);
     const inviteOk =
       inviteToken.length > 0 &&
+      inviteToken !== OPEN_SIGNUP_TOKEN &&
       (await inviteTokenAllowsWebAuthnRegistration(
         c.env.DB_CONTROL,
         inviteToken,
         email
       ));
-    if (!enrollment && !inviteOk) {
+    if (!enrollment && !inviteOk && !openSignup) {
       return c.json({ error: "enrollment_disabled" }, 403);
     }
 
     const user = await getUserByEmail(c.env.DB_CONTROL, email);
     if (!user) {
       return c.json({ error: "unknown_email" }, 404);
+    }
+
+    if (openSignup) {
+      const existingCreds = await listWebAuthnCredentialIdsForUser(
+        c.env.DB_CONTROL,
+        user.id
+      );
+      if (existingCreds.length > 0) {
+        return c.json({ error: "already_registered" }, 409);
+      }
     }
 
     const stored = await takeWebAuthnChallenge(c.env.SYSTEM_CONFIG, challengeKey);

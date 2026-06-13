@@ -3,6 +3,7 @@ import { createRoute } from "honox/factory";
 import {
   getDashboardUserId,
   isDashboardDevFallback,
+  isOpenSignupEnabled,
   isWebAuthnEmailEnrollmentEnabled,
   playgroundHref,
 } from "@/lib/dashboard-user";
@@ -85,6 +86,12 @@ export default createRoute(async (c) => {
               {next ? <input type="hidden" name="next" value={next} /> : null}
               <ButtonPrimary type="submit">Dev: セッションを作成</ButtonPrimary>
             </form>
+          </div>
+        ) : null}
+        {isOpenSignupEnabled(c.env) ? (
+          <div className="border-t border-kumo-hairline pt-4 text-sm text-kumo-subtle">
+            アカウントをお持ちでない方は{" "}
+            <TextLink href="/signup">新規登録</TextLink>
           </div>
         ) : null}
         <div className="pt-2">

@@ -3,6 +3,7 @@ import { createRoute } from "honox/factory";
 import { getInviteDetailsForAccept, countUsers } from "@/data/control-plane";
 import {
   getDashboardUserId,
+  isOpenSignupEnabled,
   playgroundHref,
 } from "@/lib/dashboard-user";
 import { Card, PageHeader, TextLink } from "@/ui/components";
@@ -14,24 +15,30 @@ export default createRoute(async (c) => {
 
   let details: Awaited<ReturnType<typeof getInviteDetailsForAccept>> = null;
   let isFirstUser = false;
+  let isOpenSignup = false;
 
   if (!token) {
-    // 招待トークンがない場合、システムにユーザーが一人もいなければ初回登録を許可する
+    // 招待トークンがない場合: ユーザーが0人なら初回管理者登録、
+    // それ以外でセルフ登録が有効ならオープンサインアップ、どちらでもなければログインへ。
     const userCount = await countUsers(c.env.DB_CONTROL);
+    const synthetic = {
+      orgName: "",
+      invitedEmail: "",
+      orgSlug: "",
+      inviteId: "bootstrap",
+      orgId: "bootstrap",
+      role: "admin" as const,
+      expiresAt: new Date(Date.now() + 3600000),
+      maxUses: 1,
+      useCount: 0,
+      invitedUsername: null,
+    };
     if (userCount === 0) {
       isFirstUser = true;
-      details = {
-        orgName: "First Team",
-        invitedEmail: "",
-        orgSlug: "first-team",
-        inviteId: "bootstrap",
-        orgId: "bootstrap",
-        role: "admin",
-        expiresAt: new Date(Date.now() + 3600000),
-        maxUses: 1,
-        useCount: 0,
-        invitedUsername: null,
-      };
+      details = { ...synthetic, orgName: "First Team", orgSlug: "first-team" };
+    } else if (isOpenSignupEnabled(c.env)) {
+      isOpenSignup = true;
+      details = { ...synthetic, role: "member" as const };
     } else {
       return c.redirect("/login");
     }
@@ -49,27 +56,40 @@ export default createRoute(async (c) => {
   const now = Date.now();
   const expired = details.expiresAt.getTime() <= now;
   const depleted = details.useCount >= details.maxUses;
-  if (!isFirstUser && (expired || depleted)) {
+  if (!isFirstUser && !isOpenSignup && (expired || depleted)) {
     return c.redirect(`/invite/${encodeURIComponent(token)}`);
   }
 
   const pg = playgroundHref(c.env);
   const lockedEmail = details.invitedEmail?.trim() ?? "";
   const emailLocked = lockedEmail.length > 0;
-  // 初回ユーザーの場合は bootstrap 用のトークン（実際には無視されるが JS 側で必要）を渡す
-  const effectiveToken = isFirstUser ? "bootstrap-token" : token;
-  const nextPath = isFirstUser ? "/" : `/invite/${encodeURIComponent(token)}`;
+  // JS 側に渡すトークン: 初回は bootstrap-token、オープンは open-signup、招待は token。
+  const effectiveToken = isFirstUser
+    ? "bootstrap-token"
+    : isOpenSignup
+      ? "open-signup"
+      : token;
+  // 登録後の遷移先: 初回はトップ、オープンは最初のチーム作成、招待は受諾ページ。
+  const nextPath = isFirstUser
+    ? "/"
+    : isOpenSignup
+      ? "/onboarding/create-team"
+      : `/invite/${encodeURIComponent(token)}`;
+
+  const headerTitle = isFirstUser
+    ? "Wana へようこそ"
+    : isOpenSignup
+      ? "アカウントを作成"
+      : `${details.orgName} — 新規アカウント`;
+  const headerDesc = isFirstUser
+    ? "最初の管理者アカウントを作成します。メールアドレスを入力してパスキーを登録してください。"
+    : isOpenSignup
+      ? "メールアドレスを入力してパスキーでアカウントを作成します。作成後、最初のチームを作ります。"
+      : "招待を受け取り、パスキーでアカウントを作成します。既にアカウントがある場合はログインしてください。";
 
   return c.render(
     <Shell title={isFirstUser ? "管理者登録" : "アカウント作成"} playgroundUrl={pg} auth="signed-out">
-      <PageHeader
-        title={isFirstUser ? "Wana へようこそ" : `${details.orgName} — 新規アカウント`}
-        description={
-          isFirstUser 
-            ? "最初の管理者アカウントを作成します。メールアドレスを入力してパスキーを登録してください。"
-            : "招待を受け取り、パスキーでアカウントを作成します。既にアカウントがある場合はログインしてください。"
-        }
-      />
+      <PageHeader title={headerTitle} description={headerDesc} />
       <Card className="max-w-lg space-y-4 p-6 sm:p-8">
         <div
           id="signup-invite-root"

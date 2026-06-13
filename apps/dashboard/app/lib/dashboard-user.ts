@@ -34,6 +34,12 @@ export function isWebAuthnEmailEnrollmentEnabled(env: Env): boolean {
   return v === "true" || v === "1";
 }
 
+/** Open self-service signup (anyone can create an account). Default off. */
+export function isOpenSignupEnabled(env: Env): boolean {
+  const v = env.ALLOW_OPEN_SIGNUP;
+  return v === "true" || v === "1";
+}
+
 /** Resolved user id from session middleware, or null. */
 export function getDashboardUserId(
   c: Context<{ Bindings: Env }>
