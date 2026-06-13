@@ -22,6 +22,13 @@ export default {
         tag: "0002_issue_culprit",
         breakpoints: true,
       },
+      {
+        idx: 2,
+        version: "5",
+        when: 1749000000000,
+        tag: "0003_event_tags",
+        breakpoints: true,
+      },
     ],
   },
   migrations: {
@@ -55,6 +62,19 @@ export default {
     `,
     m0001: `
       ALTER TABLE issues ADD COLUMN culprit TEXT;
+    `,
+    m0002: `
+      ALTER TABLE events ADD COLUMN tags_json TEXT;
+
+      CREATE TABLE IF NOT EXISTS event_tags (
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (event_id, key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_event_tags_kv ON event_tags(key, value);
+      CREATE INDEX IF NOT EXISTS idx_event_tags_event ON event_tags(event_id);
     `,
   },
 };

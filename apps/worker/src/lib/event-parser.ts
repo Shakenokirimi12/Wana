@@ -9,6 +9,106 @@ export interface ExtractedEventMetadata {
   culprit: string | null;
   environment: string | null;
   release: string | null;
+  /** Normalized flat tag map. Keys lowercased + alphabet-validated, values capped at 200 chars. */
+  tags: Record<string, string>;
+}
+
+const TAG_KEY_RE = /^[a-z0-9._-]{1,64}$/;
+const MAX_TAG_VALUE_LEN = 200;
+
+function coerceTagValue(raw: unknown): string | null {
+  if (raw == null) return null;
+  let s: string;
+  if (typeof raw === "string") s = raw;
+  else if (typeof raw === "number" || typeof raw === "boolean") s = String(raw);
+  else return null; // skip objects/arrays — caller is responsible for flattening first
+  s = s.trim();
+  if (!s) return null;
+  if (s.length > MAX_TAG_VALUE_LEN) {
+    s = s.slice(0, MAX_TAG_VALUE_LEN - 1) + "…";
+  }
+  return s;
+}
+
+function putTag(out: Record<string, string>, rawKey: unknown, rawVal: unknown): void {
+  if (typeof rawKey !== "string") return;
+  const key = rawKey.toLowerCase();
+  if (!TAG_KEY_RE.test(key)) return;
+  const value = coerceTagValue(rawVal);
+  if (value === null) return;
+  out[key] = value; // last-wins on collision
+}
+
+/**
+ * Sentry-compatible flat-tag extraction. Order matters: well-known fields and
+ * known contexts are written FIRST, then `payload.tags` overrides them so the
+ * SDK-supplied tag wins. We never extract from `payload.user` (PII) or from
+ * unknown contexts (which can carry secrets like cookies).
+ */
+function extractTags(payload: SentryEventPayload): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  // Well-known top-level fields → tag-like search tokens
+  putTag(out, "level", payload.level);
+  putTag(out, "platform", payload.platform);
+  putTag(out, "environment", payload.environment);
+  putTag(out, "release", payload.release);
+  putTag(out, "logger", payload.logger);
+  // dist/transaction/server_name aren't strongly-typed yet — read via cast.
+  const anyPayload = payload as unknown as Record<string, unknown>;
+  putTag(out, "dist", anyPayload.dist);
+  putTag(out, "transaction", anyPayload.transaction);
+  putTag(out, "server_name", anyPayload.server_name);
+
+  // Known contexts — only flatten the allowlisted shapes
+  const contexts = payload.contexts;
+  if (contexts && typeof contexts === "object") {
+    const c = contexts as Record<string, unknown>;
+    const browser = c.browser as Record<string, unknown> | undefined;
+    if (browser) {
+      putTag(out, "browser.name", browser.name);
+      putTag(out, "browser.version", browser.version);
+      // Sentry's bar accepts plain `browser:` — alias to the name for nicer UX.
+      if (typeof browser.name === "string") putTag(out, "browser", browser.name);
+    }
+    const os = c.os as Record<string, unknown> | undefined;
+    if (os) {
+      putTag(out, "os.name", os.name);
+      putTag(out, "os.version", os.version);
+      if (typeof os.name === "string") putTag(out, "os", os.name);
+    }
+    const runtime = c.runtime as Record<string, unknown> | undefined;
+    if (runtime) {
+      putTag(out, "runtime.name", runtime.name);
+      putTag(out, "runtime.version", runtime.version);
+      if (typeof runtime.name === "string") putTag(out, "runtime", runtime.name);
+    }
+    const device = c.device as Record<string, unknown> | undefined;
+    if (device) {
+      putTag(out, "device.family", device.family);
+    }
+    const app = c.app as Record<string, unknown> | undefined;
+    if (app) {
+      putTag(out, "app.version", app.app_version);
+    }
+  }
+
+  // User-supplied `payload.tags` — wins on collision. Accepts both
+  // `{k:v}` (server SDKs) and `[[k,v], ...]` (some browser SDK paths).
+  const t = payload.tags as unknown;
+  if (Array.isArray(t)) {
+    for (const pair of t) {
+      if (Array.isArray(pair) && pair.length === 2) {
+        putTag(out, pair[0], pair[1]);
+      }
+    }
+  } else if (t && typeof t === "object") {
+    for (const [k, v] of Object.entries(t as Record<string, unknown>)) {
+      putTag(out, k, v);
+    }
+  }
+
+  return out;
 }
 
 export function parseEventFromEnvelope(
@@ -89,5 +189,6 @@ export function parseEventFromEnvelope(
     environment:
       typeof payload.environment === "string" ? payload.environment : null,
     release: typeof payload.release === "string" ? payload.release : null,
+    tags: extractTags(payload),
   };
 }

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 // Data Plane Schema (Durable Objects SQLite)
 // Each project has its own DO instance with isolated SQLite database
@@ -39,9 +39,31 @@ export const events = sqliteTable(
     environment: text("environment"),
     release: text("release"),
     r2PayloadKey: text("r2_payload_key").notNull(),
+    /** Full flat tag map for issue-detail display (canonical JSON, sorted keys). */
+    tagsJson: text("tags_json"),
   },
   (table) => [
     index("idx_events_issue_id").on(table.issueId),
     index("idx_events_timestamp").on(table.timestamp),
+  ]
+);
+
+/**
+ * Normalized per-event tag rows for indexed search. Insert alongside the event
+ * row. `ON DELETE CASCADE` keeps retention purges of `events` tidy.
+ */
+export const eventTags = sqliteTable(
+  "event_tags",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.eventId, table.key] }),
+    index("idx_event_tags_kv").on(table.key, table.value),
+    index("idx_event_tags_event").on(table.eventId),
   ]
 );

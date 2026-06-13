@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { drizzle, DrizzleSqliteDODatabase } from "drizzle-orm/durable-sqlite";
 import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import { eq, desc, sql, lt, inArray } from "drizzle-orm";
-import { issues, events } from "@wana/schema/data-plane";
+import { issues, events, eventTags } from "@wana/schema/data-plane";
 import migrations from "@wana/schema/data-plane-migrations";
 import type { ParsedEnvelope, IssueStatus } from "@wana/types";
 import type { Env } from "../types";
@@ -171,10 +171,36 @@ export class ProjectDataStore extends DurableObject<Env> {
             environment: item.meta.environment,
             release: item.meta.release,
             r2PayloadKey: item.r2Key,
+            // Canonical, no whitespace, key-sorted — lets the LIKE-based
+            // fallback search work predictably even without the normalized table.
+            tagsJson: JSON.stringify(
+              Object.fromEntries(
+                Object.entries(item.meta.tags).sort(([a], [b]) => a.localeCompare(b))
+              )
+            ),
           }))
         )
         .onConflictDoNothing()
         .returning({ id: events.id });
+
+      // Mirror tags into the normalized table for indexed search. Only insert
+      // rows for events that were actually new (skip rows that lost the
+      // onConflictDoNothing race so we don't duplicate-PK error here).
+      const insertedIds = new Set(inserted.map((r) => r.id));
+      const tagRows = items
+        .filter((item) => insertedIds.has(item.eventId))
+        .flatMap((item) =>
+          Object.entries(item.meta.tags).map(([key, value]) => ({
+            eventId: item.eventId,
+            key,
+            value,
+          }))
+        );
+      if (tagRows.length > 0) {
+        // SQLite multi-row insert hard cap (≤500 rows per statement) — we
+        // currently process small batches, so a single insert is fine.
+        await this.db.insert(eventTags).values(tagRows).onConflictDoNothing();
+      }
 
       const newCount = inserted.length;
       if (newCount > 0) {
@@ -211,27 +237,122 @@ export class ProjectDataStore extends DurableObject<Env> {
     status?: IssueStatus;
     limit?: number;
     offset?: number;
+    /** Raw search bar input — parsed in-DO so the dashboard doesn't have to. */
+    search?: string;
   }) {
     const limit = Math.min(Math.max(options?.limit || 50, 1), 200);
     const offset = Math.max(options?.offset || 0, 0);
     const status = options?.status;
 
-    if (status) {
+    const search = (options?.search ?? "").trim();
+    if (!search) {
+      if (status) {
+        return this.db
+          .select()
+          .from(issues)
+          .where(eq(issues.status, status))
+          .orderBy(desc(issues.lastSeen))
+          .limit(limit)
+          .offset(offset);
+      }
       return this.db
         .select()
         .from(issues)
-        .where(eq(issues.status, status))
         .orderBy(desc(issues.lastSeen))
         .limit(limit)
         .offset(offset);
     }
 
-    return this.db
-      .select()
-      .from(issues)
-      .orderBy(desc(issues.lastSeen))
-      .limit(limit)
-      .offset(offset);
+    // Parse the search and build a parameterized SQL query against the DO's
+    // raw `storage.sql` API (Drizzle's dynamic builder is awkward for this
+    // shape, and the raw API supports prepared statements directly). All
+    // user-supplied values are passed as bind params — no SQL injection.
+    // See packages/core/src/search-query.ts for the grammar.
+    const { parseSearchQuery } = await import("@wana/core");
+    const q = parseSearchQuery(search);
+
+    const effectiveStatus = q.status && q.status !== "all" ? q.status : status;
+
+    const whereParts: string[] = [];
+    const binds: (string | number)[] = [];
+
+    if (effectiveStatus) {
+      whereParts.push("i.status = ?");
+      binds.push(effectiveStatus);
+    }
+
+    for (const t of q.freeText) {
+      whereParts.push(
+        "(lower(i.value) LIKE ? OR lower(i.type) LIKE ? OR lower(coalesce(i.culprit,'')) LIKE ?)"
+      );
+      const pat = `%${t.toLowerCase()}%`;
+      binds.push(pat, pat, pat);
+    }
+
+    // Positive tag filters: SAME event must satisfy them all (bind to `e`).
+    for (const tf of q.tagFilters) {
+      const placeholders = tf.values.map(() => "?").join(",");
+      whereParts.push(
+        `EXISTS (SELECT 1 FROM event_tags t WHERE t.event_id=e.id AND t.key=? AND lower(t.value) IN (${placeholders}))`
+      );
+      binds.push(tf.key.toLowerCase());
+      for (const v of tf.values) binds.push(v.toLowerCase());
+    }
+
+    for (const k of q.hasKeys) {
+      whereParts.push(
+        "EXISTS (SELECT 1 FROM event_tags t WHERE t.event_id=e.id AND t.key=?)"
+      );
+      binds.push(k.toLowerCase());
+    }
+
+    for (const nf of q.negTagFilters) {
+      whereParts.push(
+        "NOT EXISTS (SELECT 1 FROM events e2 JOIN event_tags t ON t.event_id=e2.id WHERE e2.issue_id=i.id AND t.key=? AND lower(t.value)=?)"
+      );
+      binds.push(nf.key.toLowerCase(), nf.value.toLowerCase());
+    }
+    for (const nk of q.negHasKeys) {
+      whereParts.push(
+        "NOT EXISTS (SELECT 1 FROM events e2 JOIN event_tags t ON t.event_id=e2.id WHERE e2.issue_id=i.id AND t.key=?)"
+      );
+      binds.push(nk.toLowerCase());
+    }
+
+    const where =
+      whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+
+    const stmt = `SELECT DISTINCT i.id, i.fingerprint, i.type, i.value, i.status, i.events_count,
+              i.culprit, i.first_seen, i.last_seen
+         FROM issues i
+         INNER JOIN events e ON e.issue_id = i.id
+         ${where}
+         ORDER BY i.last_seen DESC
+         LIMIT ${limit} OFFSET ${offset}`;
+
+    const cursor = this.ctx.storage.sql.exec(stmt, ...binds);
+    const rows = cursor.toArray() as Array<{
+      id: string;
+      fingerprint: string;
+      type: string;
+      value: string;
+      status: IssueStatus;
+      events_count: number;
+      culprit: string | null;
+      first_seen: number;
+      last_seen: number;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      fingerprint: r.fingerprint,
+      type: r.type,
+      value: r.value,
+      status: r.status,
+      eventsCount: Number(r.events_count ?? 0),
+      culprit: r.culprit ?? null,
+      firstSeen: new Date(Number(r.first_seen)),
+      lastSeen: new Date(Number(r.last_seen)),
+    }));
   }
 
   /** Counts for issue stream tabs (Sentry-style). */
@@ -280,6 +401,34 @@ export class ProjectDataStore extends DurableObject<Env> {
       .orderBy(desc(events.timestamp))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * Tags from the most recent event of an issue, for issue-detail rendering.
+   * Returns {} for issues whose latest event predates the tags feature.
+   */
+  async getLatestEventTags(issueId: string): Promise<Record<string, string>> {
+    const rows = await this.db
+      .select({ tagsJson: events.tagsJson })
+      .from(events)
+      .where(eq(events.issueId, issueId))
+      .orderBy(desc(events.timestamp))
+      .limit(1);
+    const raw = rows[0]?.tagsJson;
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === "string") out[k] = v;
+        }
+        return out;
+      }
+    } catch {
+      /* fall through */
+    }
+    return {};
   }
 
   async updateIssueStatus(issueId: string, status: IssueStatus): Promise<void> {

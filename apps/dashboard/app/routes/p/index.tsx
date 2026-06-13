@@ -139,10 +139,32 @@ function IssueStreamQueryBar(props: {
         type="search"
         name="search"
         defaultValue={props.search}
-        placeholder="issue を検索（メッセージ・型・発生箇所）"
-        className="h-9 min-w-[14rem] flex-1 rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 text-sm text-kumo-default placeholder:text-kumo-subtle focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+        placeholder="issue を検索 — メッセージ・型・発生箇所、または browser:Chrome / has:release / !runtime:node"
+        className="h-9 min-w-[18rem] flex-1 rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 text-sm text-kumo-default placeholder:text-kumo-subtle focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
       />
       <ButtonSecondary type="submit">検索</ButtonSecondary>
+      <details className="relative">
+        <summary
+          className="cursor-help select-none rounded-full border border-kumo-hairline bg-kumo-recessed px-2.5 py-1 text-xs text-kumo-subtle hover:text-kumo-default"
+          aria-label="検索構文ヘルプ"
+        >
+          ?
+        </summary>
+        <div className="absolute right-0 z-10 mt-2 w-80 rounded-lg border border-kumo-hairline bg-kumo-canvas p-3 text-xs leading-relaxed text-kumo-default shadow-lg">
+          <div className="mb-1 font-semibold">検索構文</div>
+          <ul className="space-y-1 text-kumo-subtle">
+            <li><code className="text-kumo-default">key:value</code> — タグ完全一致</li>
+            <li><code className="text-kumo-default">key:a,b</code> — どちらか一致 (OR)</li>
+            <li><code className="text-kumo-default">!key:value</code> — 否定（issue 内のどの event にも無いもの）</li>
+            <li><code className="text-kumo-default">has:key</code> / <code className="text-kumo-default">!has:key</code> — タグ有無</li>
+            <li><code className="text-kumo-default">is:unresolved|resolved|ignored|all</code></li>
+            <li>条件なしのトークン — メッセージ・型・発生箇所の部分一致</li>
+          </ul>
+          <div className="mt-2 text-kumo-subtle">
+            主なタグ: <code>browser</code> · <code>os</code> · <code>runtime</code> · <code>environment</code> · <code>release</code> · <code>level</code> · <code>transaction</code>
+          </div>
+        </div>
+      </details>
       {props.search ? (
         <a
           href={`/p/${props.projectId}?query=${encodeURIComponent(props.queryParam)}`}
@@ -203,6 +225,91 @@ function IssueStreamTable(props: { projectId: string; rows: IssueStreamRow[] }) 
         </a>
       ))}
     </div>
+  );
+}
+
+/** Curated key order at the top of the Tags card; remaining tags are alphabetised. */
+const CURATED_TAG_KEYS = [
+  "level",
+  "environment",
+  "release",
+  "transaction",
+  "browser",
+  "browser.version",
+  "os",
+  "os.version",
+  "runtime",
+  "runtime.version",
+  "platform",
+  "device.family",
+  "app.version",
+];
+
+/** Build a search URL that APPENDS `key:value` to the current `?search=` (no dup, preserve `?query=`). */
+function buildTagFilterHref(
+  projectId: string,
+  currentQuery: string,
+  currentSearch: string,
+  key: string,
+  value: string
+): string {
+  const token = /\s/.test(value) ? `${key}:"${value}"` : `${key}:${value}`;
+  const existing = currentSearch.split(/\s+/).filter(Boolean);
+  if (!existing.includes(token)) existing.push(token);
+  const params = new URLSearchParams();
+  if (currentQuery) params.set("query", currentQuery);
+  params.set("search", existing.join(" "));
+  return `/p/${encodeURIComponent(projectId)}?${params.toString()}`;
+}
+
+function IssueTagsCard(props: {
+  projectId: string;
+  tags: Record<string, string>;
+}) {
+  const entries = Object.entries(props.tags);
+  if (entries.length === 0) return null;
+
+  const seen = new Set<string>();
+  const curated: [string, string][] = [];
+  for (const k of CURATED_TAG_KEYS) {
+    const v = props.tags[k];
+    if (typeof v === "string") {
+      curated.push([k, v]);
+      seen.add(k);
+    }
+  }
+  const rest = entries
+    .filter(([k]) => !seen.has(k))
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  const renderChip = ([key, value]: [string, string]) => (
+    <a
+      key={`${key}=${value}`}
+      className="inline-flex items-center gap-1.5 rounded-full border border-kumo-hairline bg-kumo-recessed px-2.5 py-1 text-xs text-kumo-default transition-colors hover:border-kumo-line hover:bg-kumo-base"
+      href={buildTagFilterHref(props.projectId, "is:unresolved", "", key, value)}
+      title={`${key}:${value} で絞り込み`}
+    >
+      <span className="font-medium text-kumo-subtle">{key}</span>
+      <span className="text-kumo-subtle">:</span>
+      <span className="text-kumo-default">{value}</span>
+    </a>
+  );
+
+  return (
+    <Card className="mb-10 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">
+          Tags
+        </div>
+        <span className="text-[11px] text-kumo-subtle">
+          {entries.length} {entries.length === 1 ? "tag" : "tags"}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {curated.map(renderChip)}
+        {rest.map(renderChip)}
+      </div>
+    </Card>
   );
 }
 
@@ -338,25 +445,18 @@ projectsRoute.get("/:projectId", async (c) => {
   const streamFilter = parseIssueStreamQuery(queryRaw);
   const tabCounts = await store.getIssueTabCounts();
 
-  const issueRows = await store.getIssues({
+  const search = c.req.query("search")?.trim() ?? "";
+
+  // Server-side filter: the DO now parses Sentry-style `browser:Chrome
+  // env:prod !runtime:node free text` queries via packages/core/search-query.
+  const issueRows = (await store.getIssues({
     limit: 100,
-    ...(streamFilter.kind === "all"
-      ? {}
-      : { status: streamFilter.status }),
-  }) as unknown as IssueStreamRow[];
+    ...(streamFilter.kind === "all" ? {} : { status: streamFilter.status }),
+    search: search || undefined,
+  })) as unknown as IssueStreamRow[];
 
   const streamQueryParam = issueStreamQueryParam(streamFilter);
-
-  const search = c.req.query("search")?.trim() ?? "";
-  const searchLower = search.toLowerCase();
-  const streamRows = search
-    ? issueRows.filter(
-        (r) =>
-          r.value.toLowerCase().includes(searchLower) ||
-          r.type.toLowerCase().includes(searchLower) ||
-          (r.culprit ?? "").toLowerCase().includes(searchLower)
-      )
-    : issueRows;
+  const streamRows = issueRows;
 
   const emptyKind =
     tabCounts.all === 0
@@ -746,7 +846,10 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
     );
   }
 
-  const eventRows = await store.getEvents(issueId, { limit: 20 });
+  const [eventRows, latestTags] = await Promise.all([
+    store.getEvents(issueId, { limit: 20 }),
+    store.getLatestEventTags(issueId),
+  ]);
   let payloadPreview: string | null = null;
   const latest = eventRows[0];
   if (latest) {
@@ -830,6 +933,8 @@ projectsRoute.get("/:projectId/issues/:issueId", async (c) => {
           </div>
         </Card>
       </div>
+
+      <IssueTagsCard projectId={projectId} tags={latestTags} />
 
       <Card className="mb-10 p-5">
         <div className="text-xs font-semibold uppercase tracking-wider text-kumo-subtle">

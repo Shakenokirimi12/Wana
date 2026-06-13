@@ -50,13 +50,25 @@ export function projectIssuesLiveScript(
     if (day < 7) return day + "d ago";
     return new Date(tsMs).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
+  // Structured tokens (key:value, has:key, !key:value) are evaluated
+  // SERVER-SIDE; the snapshot only carries the surviving issues. The client
+  // re-filter handles the free-text portion only — if any token looks
+  // structured we accept all rows the server sent rather than flicker the
+  // wrong subset.
+  var STRUCTURED_RE = /(^|\s)!?(?:has:|[a-z0-9._-]{1,64}:)/;
+  var searchHasStructured = STRUCTURED_RE.test(searchTerm);
+  var freeTextTokens = searchHasStructured
+    ? [] // server already filtered; accept all
+    : searchTerm.split(/\s+/).filter(Boolean);
   function matchesSearch(r) {
-    if (!searchTerm) return true;
-    return (
-      String(r.value || "").toLowerCase().indexOf(searchTerm) !== -1 ||
-      String(r.type || "").toLowerCase().indexOf(searchTerm) !== -1 ||
-      String(r.culprit || "").toLowerCase().indexOf(searchTerm) !== -1
-    );
+    if (freeTextTokens.length === 0) return true;
+    var hay = (
+      String(r.value || "") + "\n" + String(r.type || "") + "\n" + String(r.culprit || "")
+    ).toLowerCase();
+    for (var i = 0; i < freeTextTokens.length; i++) {
+      if (hay.indexOf(freeTextTokens[i]) === -1) return false;
+    }
+    return true;
   }
   function applyStreamFilter(rows) {
     var byStatus;
