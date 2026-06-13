@@ -65,9 +65,6 @@ export function Shell(props: ShellProps) {
                   Create team
                 </a>
               ) : null}
-              <a className={navLink} href="/internal/ia">
-                IA
-              </a>
             </nav>
           </div>
           <div className="flex min-w-0 shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
@@ -134,12 +131,6 @@ export function Shell(props: ShellProps) {
               Team
             </a>
           ) : null}
-          <a
-            className="min-w-[28%] flex-1 rounded-lg bg-kumo-base py-2 text-center text-sm font-medium text-kumo-default"
-            href="/internal/ia"
-          >
-            IA
-          </a>
           {auth === "signed-in" ? (
             <a
               className="shrink-0 rounded-lg border border-kumo-hairline px-3 py-2 text-center text-xs font-medium text-kumo-subtle"

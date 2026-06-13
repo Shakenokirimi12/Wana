@@ -33,16 +33,18 @@ export default createRoute(async (c) => {
   if (orgs.length === 0) {
     return c.render(
       <Shell title="New project" playgroundUrl={pg} auth="signed-in">
-        <Card className="p-8">
+        <PageHeader
+          title="プロジェクトを作成"
+          description="プロジェクトを作るには、まずチームが必要です。"
+        />
+        <Card className="max-w-lg p-6 sm:p-8">
           <p className="text-sm leading-relaxed text-kumo-subtle">
-            D1 に organization がありません。シード（
-            <code className="rounded bg-kumo-base px-1.5 py-0.5 font-mono text-sm text-kumo-default">
-              scripts/setup-local.sh
-            </code>
-            ）を実行するか、手動で行を追加してください。
+            あなたが作成・管理できるチームがまだありません。最初のチームを作成すると、
+            その中でプロジェクトと DSN を発行できます。
           </p>
-          <div className="mt-6">
-            <TextLink href="/">← Home</TextLink>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <LinkPrimary href="/onboarding/create-team">チームを作成</LinkPrimary>
+            <TextLink href="/">← ホーム</TextLink>
           </div>
         </Card>
       </Shell>,

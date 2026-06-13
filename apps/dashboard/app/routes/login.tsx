@@ -37,7 +37,7 @@ export default createRoute(async (c) => {
     <Shell title="Sign in" playgroundUrl={pg} auth="hidden">
       <PageHeader
         title="ログイン"
-        description="メールアドレスを入力し、パスキー（WebAuthn）でサインインします。未登録の場合は「パスキーを登録」で初回登録できます（ローカルでは WEBAUTHN_ALLOW_EMAIL_ENROLLMENT を有効にしています）。"
+        description="メールアドレスを入力し、パスキーでサインインします。"
       />
       <Card className="max-w-lg space-y-4 p-6 sm:p-8">
         <div
@@ -75,38 +75,18 @@ export default createRoute(async (c) => {
         </div>
         <script type="module" src="/static/passkey-login.js" />
 
-        <div className="border-t border-kumo-hairline pt-4">
-          <p className="text-sm leading-relaxed text-kumo-subtle">
-            セッション Cookie がある場合は自動的に認可されます。ローカルでは{" "}
-            <code className="rounded bg-kumo-base px-1 font-mono text-kumo-default">
-              DASHBOARD_DEV_FALLBACK
-            </code>{" "}
-            が有効なとき、{" "}
-            <code className="rounded bg-kumo-base px-1 font-mono text-kumo-default">
-              DASHBOARD_USER_ID
-            </code>{" "}
-            でユーザーが決まります（本番では無効にしてください）。
-          </p>
-          {devFb ? (
-            <>
-              <p className="mt-2 text-xs text-amber-200/90">
-                現在: dev fallback 有効 — トップへ進むとシードユーザーとして扱われます（Cookie
-                なし）。
-              </p>
-              <p className="mt-1 text-xs text-kumo-subtle">
-                または、次のボタンで D1 にセッションを作成し本番同等の Cookie パスを試せます。
-              </p>
-              <form method="post" action="/dev/session" className="mt-3">
-                {next ? <input type="hidden" name="next" value={next} /> : null}
-                <ButtonPrimary type="submit">Dev: セッションを作成</ButtonPrimary>
-              </form>
-            </>
-          ) : (
-            <p className="mt-2 text-xs text-kumo-subtle">
-              dev fallback 無効: パスキーまたは D1 セッションが必要です。
+        {devFb ? (
+          <div className="border-t border-kumo-hairline pt-4">
+            <p className="text-xs text-amber-200/90">
+              開発モード（dev fallback 有効）。次のボタンで D1
+              セッションを作成し、本番同等の Cookie パスを試せます。
             </p>
-          )}
-        </div>
+            <form method="post" action="/dev/session" className="mt-3">
+              {next ? <input type="hidden" name="next" value={next} /> : null}
+              <ButtonPrimary type="submit">Dev: セッションを作成</ButtonPrimary>
+            </form>
+          </div>
+        ) : null}
         <div className="pt-2">
           <TextLink href="/">← トップへ</TextLink>
         </div>

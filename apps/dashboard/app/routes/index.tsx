@@ -70,8 +70,6 @@ export default createRoute(async (c) => {
             ) : (
               <span className="text-kumo-subtle">（未選択）</span>
             )}
-            {" · "}
-            ユーザー <span className="font-mono text-kumo-subtle">{userId}</span>
           </>
         }
         actions={
