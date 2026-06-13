@@ -17,6 +17,11 @@ export const ACTIVE_ORG_COOKIE_NAME = ACTIVE_ORG_COOKIE;
 /** When present, `DASHBOARD_DEV_FALLBACK` + env user id is not applied (explicit sign-out). */
 export const DEV_FALLBACK_SUPPRESS_COOKIE_NAME = "wana_no_dev_fb";
 
+/** Sliding idle timeout — must match the auth plugin's SESSION_IDLE_MS. */
+const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Only rewrite `lastSeenAt` at most this often, to avoid a write per request. */
+const LAST_SEEN_REFRESH_MS = 60 * 60 * 1000;
+
 /**
  * Resolves `dashboardUserId` and `activeOrgId` from session cookie or dev fallback.
  */
@@ -36,12 +41,25 @@ export const sessionMiddleware = createMiddleware<{ Bindings: Env }>(
         .select({
           userId: sessions.userId,
           id: sessions.id,
+          lastSeenAt: sessions.lastSeenAt,
         })
         .from(sessions)
         .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date(now))))
         .limit(1);
       if (rows.length > 0) {
-        userId = rows[0].userId;
+        const lastSeen = rows[0].lastSeenAt?.getTime() ?? 0;
+        // Sliding idle timeout: ignore (and refresh) sessions unused too long.
+        if (now - lastSeen <= SESSION_IDLE_MS) {
+          userId = rows[0].userId;
+          // Throttled refresh so an active session keeps sliding without a
+          // write on every request.
+          if (now - lastSeen > LAST_SEEN_REFRESH_MS) {
+            await db
+              .update(sessions)
+              .set({ lastSeenAt: new Date(now) })
+              .where(eq(sessions.id, rows[0].id));
+          }
+        }
       }
     }
 

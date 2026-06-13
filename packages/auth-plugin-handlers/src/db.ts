@@ -35,6 +35,22 @@ export async function getUserByEmail(
   return rows[0] ?? null;
 }
 
+export async function getUserById(
+  d1: D1Database,
+  userId: string
+): Promise<{ id: string; email: string; name: string } | null> {
+  if (!userId) {
+    return null;
+  }
+  const db = drizzle(d1);
+  const rows = await db
+    .select({ id: users.id, email: users.email, name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function listWebAuthnCredentialIdsForUser(
   d1: D1Database,
   userId: string

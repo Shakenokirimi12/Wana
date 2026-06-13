@@ -10,8 +10,21 @@ import type { Env } from "../types";
 // authenticating in a warm isolate until its entry expires. Kept short so revoke
 // takes effect quickly; bounded so it can't grow without limit.
 const AUTH_CACHE = new Map<string, { projectId: string; doId: string; expiresAt: number }>();
-const CACHE_TTL_MS = 10 * 1000;
+const DEFAULT_CACHE_TTL_MS = 10 * 1000;
 const AUTH_CACHE_MAX = 5000;
+
+/**
+ * Cache TTL is also the worst-case revocation latency: a disabled key / deleted
+ * project keeps authenticating in a warm isolate until its entry expires.
+ * Operators can lower `INGEST_AUTH_CACHE_TTL_MS` to tighten that window (at the
+ * cost of more D1 reads). Clamped to a sane range; falls back to the default
+ * for unset/invalid values.
+ */
+function resolveCacheTtlMs(raw: string | undefined): number {
+  const n = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_CACHE_TTL_MS;
+  return Math.min(n, 60 * 1000);
+}
 
 export const authMiddleware = createMiddleware<{ Bindings: Env }>(
   async (c, next) => {
@@ -71,7 +84,7 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(
     AUTH_CACHE.set(cacheKey, {
       projectId: apiKey.projectId,
       doId: apiKey.doId,
-      expiresAt: now + CACHE_TTL_MS,
+      expiresAt: now + resolveCacheTtlMs(c.env.INGEST_AUTH_CACHE_TTL_MS),
     });
 
     c.set("doId", apiKey.doId);

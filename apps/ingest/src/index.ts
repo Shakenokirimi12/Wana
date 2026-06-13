@@ -11,17 +11,49 @@ const app = new Hono<{ Bindings: Env }>();
 // opaquely at send() time.
 const MAX_ENVELOPE_BYTES = 110_000;
 
+interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
+// One-time warning so a misconfigured deploy (missing limiter binding) is
+// visible in logs instead of silently running with no throttling.
+const warnedMissing = new Set<string>();
+
+/**
+ * Returns true if the request is allowed. Explicit policy:
+ * - binding absent  → ALLOW (fail-open) + warn once (deploy is unthrottled).
+ * - limiter throws  → ALLOW (fail-open) + warn (don't drop traffic on a
+ *   transient limiter error); previously this leaked a 500 to the client.
+ * - limiter says no → DENY.
+ */
+async function rateLimitAllows(
+  rl: RateLimitBinding | undefined,
+  key: string,
+  label: string
+): Promise<boolean> {
+  if (!rl) {
+    if (!warnedMissing.has(label)) {
+      warnedMissing.add(label);
+      console.warn(`Rate limiter "${label}" binding absent — requests unthrottled`);
+    }
+    return true;
+  }
+  try {
+    const { success } = await rl.limit({ key });
+    return success;
+  } catch (err) {
+    console.warn(`Rate limiter "${label}" failed (fail-open):`, err);
+    return true;
+  }
+}
+
 app.use("*", cors());
 
 // Coarse per-IP rate limit BEFORE auth so invalid keys can't amplify D1 reads.
 app.use("*", async (c, next) => {
-  const rl = c.env.INGEST_IP_RATE_LIMITER;
-  if (rl) {
-    const ip = c.req.header("cf-connecting-ip") ?? "unknown";
-    const { success } = await rl.limit({ key: ip });
-    if (!success) {
-      return c.json({ error: "Rate limit exceeded" }, 429);
-    }
+  const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+  if (!(await rateLimitAllows(c.env.INGEST_IP_RATE_LIMITER, ip, "per-ip"))) {
+    return c.json({ error: "Rate limit exceeded" }, 429);
   }
   return next();
 });
@@ -36,11 +68,8 @@ app.post("/api/:projectId/envelope/", authMiddleware, async (c) => {
   const doId = c.get("doId");
 
   // Per-project rate limit (only authenticated requests count toward the key).
-  if (c.env.INGEST_RATE_LIMITER) {
-    const { success } = await c.env.INGEST_RATE_LIMITER.limit({ key: projectId });
-    if (!success) {
-      return c.json({ error: "Rate limit exceeded" }, 429);
-    }
+  if (!(await rateLimitAllows(c.env.INGEST_RATE_LIMITER, projectId, "per-project"))) {
+    return c.json({ error: "Rate limit exceeded" }, 429);
   }
 
   try {
@@ -81,11 +110,8 @@ app.post("/api/:projectId/store/", authMiddleware, async (c) => {
   const projectId = c.req.param("projectId");
   const doId = c.get("doId");
 
-  if (c.env.INGEST_RATE_LIMITER) {
-    const { success } = await c.env.INGEST_RATE_LIMITER.limit({ key: projectId });
-    if (!success) {
-      return c.json({ error: "Rate limit exceeded" }, 429);
-    }
+  if (!(await rateLimitAllows(c.env.INGEST_RATE_LIMITER, projectId, "per-project"))) {
+    return c.json({ error: "Rate limit exceeded" }, 429);
   }
 
   try {

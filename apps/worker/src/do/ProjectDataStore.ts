@@ -339,6 +339,11 @@ export class ProjectDataStore extends DurableObject<Env> {
         await this.workerEnv.PAYLOAD_STORAGE.delete(keys.slice(i, i + 1000));
       }
 
+      // NOTE: issues.eventsCount is a LIFETIME-cumulative total (matches Sentry's
+      // "times seen" semantics) — it is intentionally NOT decremented when stale
+      // event rows are purged here. So an old issue can legitimately report a
+      // count larger than the number of event rows currently retained. Issues
+      // whose events are ALL purged become orphans and are deleted just below.
       await this.db.delete(events).where(lt(events.timestamp, cutoff));
 
       const orphans = await this.db

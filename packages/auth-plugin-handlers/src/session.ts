@@ -14,6 +14,14 @@ export const DEV_FALLBACK_SUPPRESS_COOKIE_NAME = "wana_no_dev_fb";
 
 const SESSION_DAYS = 30;
 
+/**
+ * Sliding idle timeout: a session unused for this long is rejected even though
+ * its absolute 30-day expiry hasn't passed. Limits the exploit window for a
+ * cookie that's been captured but not yet used. Kept in sync with the dashboard
+ * sessionMiddleware (which also refreshes `lastSeenAt` on activity).
+ */
+export const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+
 type Ctx = Context<{ Bindings: AuthPluginEnv }>;
 
 /** Resolve the logged-in user id from the `wana_session` cookie (or null). */
@@ -22,11 +30,16 @@ export async function getSessionUserId(c: Ctx): Promise<string | null> {
   if (!token) return null;
   const db = drizzle(c.env.DB_CONTROL);
   const rows = await db
-    .select({ userId: sessions.userId })
+    .select({ userId: sessions.userId, lastSeenAt: sessions.lastSeenAt })
     .from(sessions)
     .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date())))
     .limit(1);
-  return rows[0]?.userId ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  // Reject idle sessions (sliding timeout) in addition to absolute expiry.
+  const lastSeen = row.lastSeenAt?.getTime() ?? 0;
+  if (Date.now() - lastSeen > SESSION_IDLE_MS) return null;
+  return row.userId;
 }
 
 /** Inserts a D1 session row and sets `wana_session`; clears dev-fallback suppress cookie. */

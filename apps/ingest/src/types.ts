@@ -13,6 +13,11 @@ export interface Env {
   INGEST_RATE_LIMITER?: RateLimitBinding;
   /** Coarse per-IP limiter applied BEFORE auth (caps invalid-key D1 amplification). */
   INGEST_IP_RATE_LIMITER?: RateLimitBinding;
+  /**
+   * DSN-auth cache TTL in ms (string var). Lower = faster key revocation, more
+   * D1 reads. Defaults to 10000 (10s) when unset/invalid.
+   */
+  INGEST_AUTH_CACHE_TTL_MS?: string;
 }
 
 declare module "hono" {
