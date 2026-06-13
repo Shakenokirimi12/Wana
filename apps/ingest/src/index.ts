@@ -13,6 +13,19 @@ const MAX_ENVELOPE_BYTES = 110_000;
 
 app.use("*", cors());
 
+// Coarse per-IP rate limit BEFORE auth so invalid keys can't amplify D1 reads.
+app.use("*", async (c, next) => {
+  const rl = c.env.INGEST_IP_RATE_LIMITER;
+  if (rl) {
+    const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+    const { success } = await rl.limit({ key: ip });
+    if (!success) {
+      return c.json({ error: "Rate limit exceeded" }, 429);
+    }
+  }
+  return next();
+});
+
 app.get("/health", (c) => {
   return c.json({ status: "ok", service: "wana-ingest" });
 });
@@ -21,6 +34,14 @@ app.get("/health", (c) => {
 app.post("/api/:projectId/envelope/", authMiddleware, async (c) => {
   const projectId = c.req.param("projectId");
   const doId = c.get("doId");
+
+  // Per-project rate limit (only authenticated requests count toward the key).
+  if (c.env.INGEST_RATE_LIMITER) {
+    const { success } = await c.env.INGEST_RATE_LIMITER.limit({ key: projectId });
+    if (!success) {
+      return c.json({ error: "Rate limit exceeded" }, 429);
+    }
+  }
 
   try {
     const body = await c.req.text();
@@ -59,6 +80,13 @@ app.post("/api/:projectId/envelope/", authMiddleware, async (c) => {
 app.post("/api/:projectId/store/", authMiddleware, async (c) => {
   const projectId = c.req.param("projectId");
   const doId = c.get("doId");
+
+  if (c.env.INGEST_RATE_LIMITER) {
+    const { success } = await c.env.INGEST_RATE_LIMITER.limit({ key: projectId });
+    if (!success) {
+      return c.json({ error: "Rate limit exceeded" }, 429);
+    }
+  }
 
   try {
     const raw = await c.req.text();
