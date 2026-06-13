@@ -389,5 +389,13 @@ export async function createProjectWithApiKey(
     createdAt: new Date(now),
   });
 
+  await recordAuditEvent(d1, {
+    actorUserId: input.actingUserId,
+    orgId: input.orgId,
+    projectId,
+    action: "project.create",
+    payload: { name, hint },
+  });
+
   return { projectId, doId, plainKey, hint };
 }

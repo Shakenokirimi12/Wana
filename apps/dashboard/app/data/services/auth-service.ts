@@ -13,6 +13,7 @@ import {
 } from "../../lib/invite-token";
 import { createDb } from "./db-client";
 import { getOrgMembership, orgRoleAtLeast } from "./org-service";
+import { recordAuditEvent } from "./audit-service";
 
 const SIMPLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -237,6 +238,19 @@ export async function createOrganizationInvite(
     createdAt: new Date(now),
   });
 
+  await recordAuditEvent(d1, {
+    actorUserId: input.actingUserId,
+    orgId: input.orgId,
+    action: "invite.create",
+    payload: {
+      inviteId,
+      role: input.role,
+      maxUses,
+      ttlHours: input.ttlHours,
+      channel: invitedEmail ? "email" : "link",
+    },
+  });
+
   return { inviteId, plainToken };
 }
 
@@ -286,6 +300,14 @@ export async function revokeOrganizationInvite(
       )
     )
     .returning({ id: organizationInvites.id });
+  if (removed.length > 0) {
+    await recordAuditEvent(d1, {
+      actorUserId: input.actingUserId,
+      orgId: input.orgId,
+      action: "invite.revoke",
+      payload: { inviteId: input.inviteId },
+    });
+  }
   return removed.length > 0;
 }
 
