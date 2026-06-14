@@ -41,56 +41,40 @@ export function Shell(props: ShellProps) {
   return (
     <div className="min-h-screen bg-kumo-canvas text-kumo-default antialiased">
       <header className="sticky top-0 z-50 border-b border-kumo-hairline bg-kumo-canvas/75 backdrop-blur-xl backdrop-saturate-150">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-8">
-            <a className="group flex shrink-0 items-center gap-3" href="/">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 text-sm font-bold text-zinc-950 shadow-lg shadow-amber-500/15 transition group-hover:shadow-amber-500/25">
-                W
-              </span>
-              <span className="hidden font-semibold tracking-tight text-kumo-default sm:inline sm:text-[15px]">
-                Wana
-              </span>
-            </a>
-            <nav className="hidden items-center gap-1 md:flex">
-              <a className={navLink} href="/">
-                Projects
-              </a>
-              <a className={navLink} href="/projects/new">
-                New project
-              </a>
-              {auth === "signed-in" ? (
-                <a className={navLink} href="/onboarding/create-team">
-                  Create team
-                </a>
-              ) : null}
-            </nav>
-          </div>
-          <div className="flex min-w-0 shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
-            {props.teamSwitcher && props.teamSwitcher.length > 1 ? (
-              <div className="flex max-w-full flex-wrap justify-end gap-1 text-[11px] text-kumo-subtle">
-                <span className="shrink-0">Team:</span>
-                {props.teamSwitcher.map((t) => (
-                  <a
-                    key={t.id}
-                    className="rounded px-1.5 py-0.5 font-medium text-kumo-brand hover:bg-kumo-base"
-                    href={`/team/switch?id=${encodeURIComponent(t.id)}&next=${encodeURIComponent("/")}`}
-                    title={t.slug}
-                  >
-                    {t.name}
-                  </a>
-                ))}
-              </div>
-            ) : props.activeTeamName ? (
-              <span className="max-w-[10rem] truncate text-right text-[11px] text-kumo-subtle sm:max-w-[14rem]">
-                {props.activeTeamName}
-              </span>
-            ) : null}
-            <span
-              className="max-w-[12rem] truncate text-right text-xs font-medium uppercase tracking-wider text-kumo-subtle md:max-w-[16rem]"
-              title={props.title}
-            >
-              {props.title}
+        {/* TOP ROW — brand + desktop nav + (md+) right-side meta+actions */}
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:h-16 sm:gap-4 sm:px-6">
+          <a className="group flex shrink-0 items-center gap-2 sm:gap-3" href="/">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 text-sm font-bold text-zinc-950 shadow-lg shadow-amber-500/15 transition group-hover:shadow-amber-500/25">
+              W
             </span>
+            <span className="hidden font-semibold tracking-tight text-kumo-default sm:inline sm:text-[15px]">
+              Wana
+            </span>
+          </a>
+          <nav className="hidden flex-1 items-center gap-1 md:flex">
+            <a className={navLink} href="/">
+              Projects
+            </a>
+            <a className={navLink} href="/projects/new">
+              New project
+            </a>
+            {auth === "signed-in" ? (
+              <a className={navLink} href="/onboarding/create-team">
+                Create team
+              </a>
+            ) : null}
+          </nav>
+          {/* Page title — shown inline on small screens too so users always
+              know where they are. Truncated to keep the row a single line. */}
+          <span
+            className="min-w-0 flex-1 truncate text-right text-[11px] font-medium uppercase tracking-wider text-kumo-subtle md:flex-none md:text-xs"
+            title={props.title}
+          >
+            {props.title}
+          </span>
+          {/* Right-side actions — Account / Sign out / Sign in. Only icon-ish
+              on phones; full labels on md+. */}
+          <div className="hidden shrink-0 items-center gap-1 md:flex md:gap-3">
             {auth === "signed-in" ? (
               <a
                 className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
@@ -116,22 +100,50 @@ export function Shell(props: ShellProps) {
             ) : null}
           </div>
         </div>
-        <nav className="flex flex-wrap gap-2 border-t border-kumo-hairline px-6 py-2 md:hidden">
+
+        {/* TEAM CONTEXT ROW — only when there's a switcher or an active team. */}
+        {(props.teamSwitcher && props.teamSwitcher.length > 1) ||
+        props.activeTeamName ? (
+          <div className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto whitespace-nowrap px-4 pb-2 text-[11px] text-kumo-subtle sm:px-6 md:pb-1.5">
+            <span className="shrink-0">Team:</span>
+            {props.teamSwitcher && props.teamSwitcher.length > 1
+              ? props.teamSwitcher.map((t) => (
+                  <a
+                    key={t.id}
+                    className="shrink-0 rounded px-1.5 py-0.5 font-medium text-kumo-brand hover:bg-kumo-base"
+                    href={`/team/switch?id=${encodeURIComponent(t.id)}&next=${encodeURIComponent("/")}`}
+                    title={t.slug}
+                  >
+                    {t.name}
+                  </a>
+                ))
+              : (
+                <span className="shrink-0 text-kumo-default">
+                  {props.activeTeamName}
+                </span>
+              )}
+          </div>
+        ) : null}
+
+        {/* MOBILE NAV ROW — primary nav + auth action. Always horizontal,
+            scrollable rather than wrapping, so the header height stays
+            predictable on tiny screens. */}
+        <nav className="flex items-center gap-2 overflow-x-auto border-t border-kumo-hairline px-4 py-2 sm:px-6 md:hidden">
           <a
-            className="min-w-[28%] flex-1 rounded-lg bg-kumo-base py-2 text-center text-sm font-medium text-kumo-default"
+            className="shrink-0 rounded-lg bg-kumo-base px-3 py-1.5 text-xs font-medium text-kumo-default"
             href="/"
           >
             Projects
           </a>
           <a
-            className="min-w-[28%] flex-1 rounded-lg bg-kumo-brand/15 py-2 text-center text-sm font-semibold text-kumo-brand"
+            className="shrink-0 rounded-lg bg-kumo-brand/15 px-3 py-1.5 text-xs font-semibold text-kumo-brand"
             href="/projects/new"
           >
             New
           </a>
           {auth === "signed-in" ? (
             <a
-              className="min-w-[28%] flex-1 rounded-lg bg-kumo-base py-2 text-center text-sm font-medium text-kumo-default"
+              className="shrink-0 rounded-lg bg-kumo-base px-3 py-1.5 text-xs font-medium text-kumo-default"
               href="/onboarding/create-team"
             >
               Team
@@ -139,23 +151,34 @@ export function Shell(props: ShellProps) {
           ) : null}
           {auth === "signed-in" ? (
             <a
-              className="shrink-0 rounded-lg border border-kumo-hairline px-3 py-2 text-center text-xs font-medium text-kumo-subtle"
+              className="shrink-0 rounded-lg bg-kumo-base px-3 py-1.5 text-xs font-medium text-kumo-default"
+              href="/settings/account"
+            >
+              Account
+            </a>
+          ) : null}
+          <span className="flex-1" />
+          {auth === "signed-in" ? (
+            <a
+              className="shrink-0 rounded-lg border border-kumo-hairline px-3 py-1.5 text-xs font-medium text-kumo-subtle"
               href="/logout"
             >
-              Out
+              Sign out
             </a>
           ) : auth === "signed-out" ? (
             <a
-              className="shrink-0 rounded-lg bg-kumo-brand/20 px-3 py-2 text-center text-xs font-semibold text-kumo-brand"
+              className="shrink-0 rounded-lg bg-kumo-brand/20 px-3 py-1.5 text-xs font-semibold text-kumo-brand"
               href={signInHref}
             >
-              In
+              Sign in
             </a>
           ) : null}
         </nav>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-10 sm:py-12">{props.children}</main>
-      <footer className="mx-auto mt-16 max-w-6xl border-t border-kumo-hairline px-6 py-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 md:py-12">
+        {props.children}
+      </main>
+      <footer className="mx-auto mt-12 max-w-6xl border-t border-kumo-hairline px-4 py-6 sm:mt-16 sm:px-6 sm:py-8">
         <p className="text-center text-xs text-kumo-subtle">Wana</p>
       </footer>
     </div>

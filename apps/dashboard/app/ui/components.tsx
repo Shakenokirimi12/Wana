@@ -183,8 +183,8 @@ export function issueStatusVariant(status: string): BadgeVariant {
 }
 
 /**
- * Issue 詳細用ステータス切替。現在のステータスは無効化＋強調、他は kumo Button で送信。
- * フォーム POST で動くため island 不要（SSR 安全）。
+ * Issue 詳細用ステータス切替。segmented-tab スタイル：選択中タブは下線＋
+ * 強い文字色、他は淡色 + hover、クリックで POST 送信（SSR 安全）。
  */
 export function IssueStatusToolbar(props: {
   action: string;
@@ -195,69 +195,63 @@ export function IssueStatusToolbar(props: {
   type Opt = {
     value: IssueStatus;
     label: string;
-    sub: string;
-    variant: "secondary" | "primary" | "destructive";
+    /** Underline + label color when this tab is the active status. */
+    activeAccent: string;
   };
 
   const opts: Opt[] = [
     {
       value: "unresolved",
       label: "Unresolved",
-      sub: "調査中・再オープン",
-      variant: "secondary",
+      activeAccent: "border-amber-500 text-kumo-default",
     },
     {
       value: "resolved",
-      label: "Resolve",
-      sub: "対応完了として閉じる",
-      variant: "primary",
+      label: "Resolved",
+      activeAccent: "border-emerald-500 text-emerald-400",
     },
     {
       value: "ignored",
-      label: "Ignore",
-      sub: "通知を抑止",
-      variant: "destructive",
+      label: "Ignored",
+      activeAccent: "border-rose-500 text-rose-300",
     },
   ];
 
   return (
-    <div
-      className="flex flex-col gap-3"
-      role="group"
-      aria-label="Issue status actions"
+    <nav
+      role="tablist"
+      aria-label="Issue status"
+      className="-mx-1 flex w-full flex-wrap gap-x-1 gap-y-0 overflow-x-auto border-b border-kumo-hairline"
     >
-      <p className="text-xs leading-relaxed text-kumo-subtle">
-        現在の状態のボタンは無効です。他のボタンで切り替えてください。
-      </p>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {opts.map((o) => {
-          const isCurrent = status === o.value;
-          return (
-            <form
-              className="min-w-0 flex-1 sm:flex-none"
-              method="post"
-              action={action}
-              key={o.value}
+      {opts.map((o) => {
+        const isCurrent = status === o.value;
+        const base =
+          "inline-flex items-center whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-default";
+        const cls = isCurrent
+          ? `${base} ${o.activeAccent}`
+          : `${base} border-transparent text-kumo-subtle hover:border-kumo-line hover:text-kumo-default`;
+        return (
+          <form
+            method="post"
+            action={action}
+            key={o.value}
+            role="presentation"
+            className="contents"
+          >
+            <input type="hidden" name="status" value={o.value} />
+            <button
+              type="submit"
+              role="tab"
+              aria-selected={isCurrent}
+              disabled={isCurrent}
+              className={cls}
             >
-              <input type="hidden" name="status" value={o.value} />
-              <Button
-                type="submit"
-                variant={isCurrent ? "secondary" : o.variant}
-                disabled={isCurrent}
-                className="w-full sm:w-auto"
-              >
-                <span className="flex flex-col items-center leading-tight">
-                  <span>{isCurrent ? `${o.label} · 現在` : o.label}</span>
-                  <span className="text-[10px] font-normal opacity-80">
-                    {o.sub}
-                  </span>
-                </span>
-              </Button>
-            </form>
-          );
-        })}
-      </div>
-    </div>
+              {o.label}
+            </button>
+          </form>
+        );
+      })}
+    </nav>
   );
 }
 
