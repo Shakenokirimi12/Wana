@@ -5,6 +5,7 @@ import {
   createRule,
   deleteEndpoint,
   deleteRule,
+  getProjectFeatures,
   getProjectRoleForUser,
   getProjectRow,
   listEndpoints,
@@ -53,10 +54,11 @@ notificationsRoute.get("/:projectId/notifications", async (c) => {
     return c.redirect(`/p/${projectId}/settings?err=${encodeURIComponent("通知設定は admin 以上が必要です")}`);
   }
 
-  const [endpoints, rules, deliveries] = await Promise.all([
+  const [endpoints, rules, deliveries, features] = await Promise.all([
     listEndpoints(c.env.DB_CONTROL, projectId),
     listRules(c.env.DB_CONTROL, projectId),
     listRecentDeliveries(c.env.DB_CONTROL, projectId, 20),
+    getProjectFeatures(c.env.DB_CONTROL, projectId),
   ]);
 
   const issuedSecret = c.req.query("secret");
@@ -166,11 +168,39 @@ notificationsRoute.get("/:projectId/notifications", async (c) => {
           action={`/p/${projectId}/notifications/endpoints/create`}
           className="space-y-3"
         >
-          <InputField label="名前" name="name" placeholder="Slack #alerts" required />
+          <InputField label="名前" name="name" placeholder="Slack #alerts / on-call mailing list" required />
+          <div className="space-y-1">
+            <label className="block text-xs font-medium uppercase tracking-wider text-kumo-subtle">
+              チャネル
+            </label>
+            <select
+              name="kind"
+              defaultValue="webhook"
+              className="h-9 w-full rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 text-sm text-kumo-default focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+            >
+              <option value="webhook">Webhook (HTTPS POST + HMAC 署名)</option>
+              {features.emailNotifications ? (
+                <option value="email">Email</option>
+              ) : (
+                <option value="email" disabled>
+                  Email（組織プランで有効化が必要）
+                </option>
+              )}
+            </select>
+            {features.emailNotifications ? (
+              <p className="text-[11px] text-kumo-subtle">
+                Email を選んだ場合、URL の代わりに送信先メールアドレスを入力してください。
+              </p>
+            ) : (
+              <p className="text-[11px] text-amber-400">
+                メール通知は組織プランで有効化されると選択できます。
+              </p>
+            )}
+          </div>
           <InputField
-            label="Webhook URL (https のみ)"
+            label="送信先 (Webhook URL またはメールアドレス)"
             name="target"
-            placeholder="https://hooks.slack.com/services/..."
+            placeholder="https://hooks.slack.com/services/... または alerts@example.com"
             required
           />
           <ButtonPrimary type="submit">作成</ButtonPrimary>
@@ -356,14 +386,22 @@ notificationsRoute.post("/:projectId/notifications/endpoints/create", async (c) 
   if (gate instanceof Response) return gate;
   const body = await c.req.parseBody();
   try {
+    const kindRaw = String(body.kind ?? "webhook");
+    const kind: "webhook" | "email" = kindRaw === "email" ? "email" : "webhook";
     const { id, plainSecret } = await createEndpoint(c.env.DB_CONTROL, c.env, {
       projectId,
       actingUserId: gate.uid,
       name: String(body.name ?? ""),
+      kind,
       target: String(body.target ?? ""),
     });
+    if (plainSecret) {
+      return c.redirect(
+        `/p/${projectId}/notifications?secret=${encodeURIComponent(plainSecret)}&endpoint=${encodeURIComponent(id)}`
+      );
+    }
     return c.redirect(
-      `/p/${projectId}/notifications?secret=${encodeURIComponent(plainSecret)}&endpoint=${encodeURIComponent(id)}`
+      `/p/${projectId}/notifications?ok=${encodeURIComponent("送信先を作成しました")}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "作成に失敗しました";

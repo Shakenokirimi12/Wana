@@ -13,6 +13,12 @@ export interface Env {
    * secrets at rest. Set with `wrangler secret put WEBHOOK_KEK_V1`.
    */
   WEBHOOK_KEK_V1?: string;
+  /** Cloudflare Email Sending binding for email notification deliveries. */
+  SEND_MAIL?: {
+    send(message: import("cloudflare:email").EmailMessage): Promise<void>;
+  };
+  /** From: address used by SEND_MAIL (must be on a verified domain). */
+  MAIL_FROM?: string;
 }
 
 import type { ProjectDataStore } from "./do/ProjectDataStore";

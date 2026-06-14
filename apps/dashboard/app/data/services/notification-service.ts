@@ -4,6 +4,7 @@ import {
   notificationDeliveries,
   notificationEndpoints,
   notificationRules,
+  organizations,
   projects,
 } from "@wana/schema/control-plane";
 
@@ -37,6 +38,27 @@ async function requireProjectAdmin(
   return { orgId: rows[0].orgId };
 }
 
+/** Read project-level feature flags by traversing project → org. */
+export async function getProjectFeatures(
+  d1: D1Database,
+  projectId: string
+): Promise<{ emailNotifications: boolean }> {
+  const db = createDb(d1);
+  const rows = await db
+    .select({
+      emailNotifications: organizations.featuresEmailNotifications,
+    })
+    .from(projects)
+    .innerJoin(organizations, eq(projects.orgId, organizations.id))
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  return {
+    emailNotifications: rows[0]?.emailNotifications ?? false,
+  };
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // ── Endpoint CRUD ───────────────────────────────────────────────────────────
 
 export async function listEndpoints(d1: D1Database, projectId: string) {
@@ -64,19 +86,40 @@ export async function createEndpoint(
     projectId: string;
     actingUserId: string;
     name: string;
+    kind?: "webhook" | "email";
     target: string;
   }
-): Promise<{ id: string; plainSecret: string }> {
+): Promise<{ id: string; plainSecret: string | null }> {
   const { orgId } = await requireProjectAdmin(d1, input.actingUserId, input.projectId);
-  if (!env.WEBHOOK_KEK_V1) {
-    throw new Error("Webhook KEK が未設定です（管理者に連絡してください）");
-  }
   const name = input.name.trim();
   if (!name) throw new Error("名前を入力してください");
-  validateWebhookUrl(input.target);
+  const kind = input.kind ?? "webhook";
 
-  const plainSecret = generateWebhookSecret();
-  const sealed = await sealWebhookSecret(env.WEBHOOK_KEK_V1, plainSecret, 1);
+  let plainSecret: string | null = null;
+  let sealed = { secretEnc: "", secretNonce: "", secretHint: "", kekVersion: 1 };
+  const target = input.target.trim();
+
+  if (kind === "webhook") {
+    if (!env.WEBHOOK_KEK_V1) {
+      throw new Error("Webhook KEK が未設定です（管理者に連絡してください）");
+    }
+    validateWebhookUrl(target);
+    plainSecret = generateWebhookSecret();
+    sealed = await sealWebhookSecret(env.WEBHOOK_KEK_V1, plainSecret, 1);
+  } else if (kind === "email") {
+    const features = await getProjectFeatures(d1, input.projectId);
+    if (!features.emailNotifications) {
+      throw new Error(
+        "メール通知は組織プランで有効化されていません（運用者に連絡してください）"
+      );
+    }
+    if (!EMAIL_RE.test(target)) {
+      throw new Error("メールアドレスの形式が不正です");
+    }
+  } else {
+    throw new Error("不明な配信先タイプです");
+  }
+
   const id = `nep_${crypto.randomUUID().replace(/-/g, "")}`;
   const now = Date.now();
   const db = createDb(d1);
@@ -84,8 +127,8 @@ export async function createEndpoint(
     id,
     projectId: input.projectId,
     name,
-    kind: "webhook",
-    target: input.target.trim(),
+    kind,
+    target,
     secretEnc: sealed.secretEnc,
     secretNonce: sealed.secretNonce,
     secretHint: sealed.secretHint,
@@ -101,7 +144,7 @@ export async function createEndpoint(
     orgId,
     projectId: input.projectId,
     action: "notification.endpoint.create",
-    payload: { endpointId: id, name, target: input.target },
+    payload: { endpointId: id, name, kind, target },
   });
   return { id, plainSecret };
 }
@@ -125,8 +168,28 @@ export async function updateEndpoint(
     patch.name = n;
   }
   if (input.target !== undefined) {
-    validateWebhookUrl(input.target);
-    patch.target = input.target.trim();
+    const target = input.target.trim();
+    // Look up the current kind to validate the new target correctly.
+    const db0 = createDb(d1);
+    const cur = await db0
+      .select({ kind: notificationEndpoints.kind })
+      .from(notificationEndpoints)
+      .where(
+        and(
+          eq(notificationEndpoints.id, input.endpointId),
+          eq(notificationEndpoints.projectId, input.projectId)
+        )
+      )
+      .limit(1);
+    if (cur.length === 0) throw new Error("送信先が見つかりません");
+    if (cur[0].kind === "email") {
+      if (!EMAIL_RE.test(target)) {
+        throw new Error("メールアドレスの形式が不正です");
+      }
+    } else {
+      validateWebhookUrl(target);
+    }
+    patch.target = target;
   }
   if (input.isActive !== undefined) patch.isActive = input.isActive;
   if (Object.keys(patch).length === 0) return;

@@ -16,6 +16,7 @@ import {
   notificationDeliveries,
   notificationEndpoints,
   notificationRules,
+  organizations,
   projects,
 } from "@wana/schema/control-plane";
 import {
@@ -29,6 +30,7 @@ import {
 
 import type { Env } from "../types";
 import type { IssueStatus } from "@wana/types";
+import { sendNotificationEmail } from "./email-sender";
 
 const USER_AGENT = "Wana-Webhook/1 (+https://wana.shakenokiri.me)";
 const PAYLOAD_PREVIEW_MAX = 1024;
@@ -50,19 +52,25 @@ export async function dispatchIssueCreated(
   issue: IssueSnapshot,
   tags: Record<string, string>
 ): Promise<void> {
-  // Missing KEK is operational — skip silently so ingest is never blocked.
-  if (!env.WEBHOOK_KEK_V1) return;
+  // Webhook KEK is required for webhook endpoints; email endpoints don't need
+  // it. We continue with email-only rules even if KEK is missing.
 
   const db = drizzle(env.DB_CONTROL);
 
-  // Project name for the payload (and a sanity check that the project exists).
+  // Project name for the payload + the org's feature flag so we can drop
+  // email-kind rules if the org isn't licensed for email anymore.
   const projectRow = await db
-    .select({ name: projects.name })
+    .select({
+      name: projects.name,
+      emailFlag: organizations.featuresEmailNotifications,
+    })
     .from(projects)
+    .innerJoin(organizations, eq(projects.orgId, organizations.id))
     .where(eq(projects.id, projectId))
     .limit(1);
   if (projectRow.length === 0) return;
   const projectName = projectRow[0].name;
+  const orgEmailEnabled = projectRow[0].emailFlag === true;
 
   const rules = await db
     .select({
@@ -74,6 +82,7 @@ export async function dispatchIssueCreated(
       ruleActive: notificationRules.isActive,
       onIssueCreated: notificationRules.onIssueCreated,
       epActive: notificationEndpoints.isActive,
+      kind: notificationEndpoints.kind,
       target: notificationEndpoints.target,
       secretEnc: notificationEndpoints.secretEnc,
       secretNonce: notificationEndpoints.secretNonce,
@@ -103,6 +112,12 @@ export async function dispatchIssueCreated(
   };
 
   for (const rule of rules) {
+    // Skip email rules when the org's plan flag is off — a license expiry or
+    // a downgrade between rule creation and fire time should not leak mail.
+    if (rule.kind === "email" && !orgEmailEnabled) continue;
+    // Skip webhook rules when KEK is unset (operational hard-stop).
+    if (rule.kind === "webhook" && !env.WEBHOOK_KEK_V1) continue;
+
     if (rule.filterQuery && rule.filterQuery.trim()) {
       const q = parseSearchQuery(rule.filterQuery);
       if (!matchIssue(issueLike, q)) continue;
@@ -119,14 +134,115 @@ export async function dispatchIssueCreated(
       .run();
     if (!upd.meta.changes) continue;
 
-    await fireOne(env, db, {
-      projectId,
-      projectName,
-      rule,
-      issue,
-      tags,
-    });
+    if (rule.kind === "email") {
+      await fireEmail(env, db, {
+        projectId,
+        projectName,
+        rule,
+        issue,
+        tags,
+      });
+    } else {
+      await fireOne(env, db, {
+        projectId,
+        projectName,
+        rule,
+        issue,
+        tags,
+      });
+    }
   }
+}
+
+function buildIssueEmailText(args: {
+  projectName: string;
+  issue: IssueSnapshot;
+  tags: Record<string, string>;
+  dashboardUrl: string | null;
+}): { subject: string; text: string } {
+  const tagLines = Object.entries(args.tags)
+    .map(([k, v]) => `  ${k}: ${v}`)
+    .join("\n");
+  const subject = `[Wana] ${args.projectName}: ${args.issue.type} — ${args.issue.value}`.slice(
+    0,
+    250
+  );
+  const text =
+    `${args.issue.type}: ${args.issue.value}\n` +
+    (args.issue.culprit ? `Culprit: ${args.issue.culprit}\n` : "") +
+    `Project: ${args.projectName}\n` +
+    (tagLines ? `\nTags:\n${tagLines}\n` : "") +
+    (args.dashboardUrl ? `\n${args.dashboardUrl}\n` : "") +
+    `\n— Wana\n`;
+  return { subject, text };
+}
+
+async function fireEmail(
+  env: Env,
+  db: ReturnType<typeof drizzle>,
+  args: {
+    projectId: string;
+    projectName: string;
+    rule: {
+      ruleId: string;
+      endpointId: string;
+      target: string;
+    };
+    issue: IssueSnapshot;
+    tags: Record<string, string>;
+  }
+): Promise<void> {
+  const deliveryId = `ndv_${crypto.randomUUID().replace(/-/g, "")}`;
+  const dashboardBase = env.DASHBOARD_PUBLIC_URL?.replace(/\/$/, "") ?? "";
+  const dashboardUrl = dashboardBase
+    ? `${dashboardBase}/p/${encodeURIComponent(args.projectId)}/issues/${encodeURIComponent(args.issue.id)}`
+    : null;
+  const { subject, text } = buildIssueEmailText({
+    projectName: args.projectName,
+    issue: args.issue,
+    tags: args.tags,
+    dashboardUrl,
+  });
+
+  let status: "delivered" | "failed" | "rejected" = "failed";
+  let errorMessage: string | null = null;
+
+  const started = Date.now();
+  try {
+    const res = await sendNotificationEmail(env, {
+      to: args.rule.target,
+      subject,
+      text,
+    });
+    if (res.ok) {
+      status = "delivered";
+    } else {
+      status = res.error === "email_not_configured" ? "rejected" : "failed";
+      errorMessage = res.error ?? null;
+    }
+  } catch (e) {
+    status = "rejected";
+    errorMessage = e instanceof Error ? e.message : "unknown error";
+  }
+  const responseMs = Date.now() - started;
+
+  const createdAt = new Date();
+  await db.insert(notificationDeliveries).values({
+    id: deliveryId,
+    ruleId: args.rule.ruleId,
+    endpointId: args.rule.endpointId,
+    projectId: args.projectId,
+    issueId: args.issue.id,
+    eventKind: "issue.created",
+    status,
+    attempt: 1,
+    responseStatus: null,
+    responseMs,
+    errorMessage,
+    payloadPreview: subject.slice(0, PAYLOAD_PREVIEW_MAX),
+    createdAt,
+    deliveredAt: status === "delivered" ? createdAt : null,
+  });
 }
 
 async function fireOne(
@@ -235,6 +351,7 @@ export async function dispatchTestSend(
   const ep = await db
     .select({
       id: notificationEndpoints.id,
+      kind: notificationEndpoints.kind,
       target: notificationEndpoints.target,
       secretEnc: notificationEndpoints.secretEnc,
       secretNonce: notificationEndpoints.secretNonce,
@@ -260,41 +377,67 @@ export async function dispatchTestSend(
 
   const deliveryId = `ndv_${crypto.randomUUID().replace(/-/g, "")}`;
   const signedAt = Math.floor(Date.now() / 1000);
-  const body = JSON.stringify({
-    version: 1,
-    delivery_id: deliveryId,
-    event_kind: "test",
-    signed_at: signedAt,
-    project_id: args.projectId,
-    project_name: projectName,
-    test: { triggered_by_user_id: args.triggeredByUserId, at: signedAt },
-  });
 
   let status: "delivered" | "failed" | "rejected" = "failed";
   let responseStatus: number | null = null;
   let responseMs: number | null = null;
   let errorMessage: string | null = null;
+  let payloadPreview = "";
 
-  try {
-    const secret = await openWebhookSecret(env.WEBHOOK_KEK_V1, {
-      secretEnc: ep[0].secretEnc,
-      secretNonce: ep[0].secretNonce,
+  const started = Date.now();
+  if (ep[0].kind === "email") {
+    const subject = `[Wana] テスト通知: ${projectName}`;
+    const text = `Wana からのテスト通知です。\nProject: ${projectName}\nTriggered by: ${args.triggeredByUserId}\nAt (unix): ${signedAt}\n\n受信できていれば設定は正常です。\n`;
+    payloadPreview = subject;
+    try {
+      const r = await sendNotificationEmail(env, {
+        to: ep[0].target,
+        subject,
+        text,
+      });
+      if (r.ok) status = "delivered";
+      else {
+        status = r.error === "email_not_configured" ? "rejected" : "failed";
+        errorMessage = r.error ?? null;
+      }
+    } catch (e) {
+      status = "rejected";
+      errorMessage = e instanceof Error ? e.message : "unknown error";
+    }
+    responseMs = Date.now() - started;
+  } else {
+    if (!env.WEBHOOK_KEK_V1) throw new Error("Webhook KEK が未設定です");
+    const body = JSON.stringify({
+      version: 1,
+      delivery_id: deliveryId,
+      event_kind: "test",
+      signed_at: signedAt,
+      project_id: args.projectId,
+      project_name: projectName,
+      test: { triggered_by_user_id: args.triggeredByUserId, at: signedAt },
     });
-    const sig = await signWebhookBody(secret, body, signedAt);
-    const result = await deliverWebhook({
-      url: ep[0].target,
-      body,
-      signatureHeader: buildSignatureHeader(signedAt, sig),
-      userAgent: USER_AGENT,
-    });
-    responseStatus = result.status;
-    responseMs = result.ms;
-    errorMessage = result.errorMessage ?? null;
-    status =
-      result.status >= 200 && result.status < 300 ? "delivered" : "failed";
-  } catch (err) {
-    status = "rejected";
-    errorMessage = err instanceof Error ? err.message : "unknown error";
+    payloadPreview = body.slice(0, PAYLOAD_PREVIEW_MAX);
+    try {
+      const secret = await openWebhookSecret(env.WEBHOOK_KEK_V1, {
+        secretEnc: ep[0].secretEnc,
+        secretNonce: ep[0].secretNonce,
+      });
+      const sig = await signWebhookBody(secret, body, signedAt);
+      const result = await deliverWebhook({
+        url: ep[0].target,
+        body,
+        signatureHeader: buildSignatureHeader(signedAt, sig),
+        userAgent: USER_AGENT,
+      });
+      responseStatus = result.status;
+      responseMs = result.ms;
+      errorMessage = result.errorMessage ?? null;
+      status =
+        result.status >= 200 && result.status < 300 ? "delivered" : "failed";
+    } catch (err) {
+      status = "rejected";
+      errorMessage = err instanceof Error ? err.message : "unknown error";
+    }
   }
 
   const createdAt = new Date();
@@ -310,7 +453,7 @@ export async function dispatchTestSend(
     responseStatus,
     responseMs,
     errorMessage,
-    payloadPreview: body.slice(0, PAYLOAD_PREVIEW_MAX),
+    payloadPreview,
     createdAt,
     deliveredAt: status === "delivered" ? createdAt : null,
   });

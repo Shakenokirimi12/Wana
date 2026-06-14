@@ -45,8 +45,16 @@
 		}
 	],
 	"vars": {
-		"DASHBOARD_PUBLIC_URL": "https://wana.shakenokiri.me"
+		"DASHBOARD_PUBLIC_URL": "https://wana.shakenokiri.me",
+		"MAIL_FROM": "noreply@example.com"
 	},
+	// Cloudflare Email Sending binding for email notifications. Restricted to
+	// a single destination address — change to `allowed_destination_addresses:
+	// [...]` or remove the address field once a verified domain is set up so
+	// the binding can send to arbitrary recipients.
+	"send_email": [
+		{ "name": "SEND_MAIL", "destination_address": "ken20051205@gmail.com" }
+	],
 	// Queue consumer for processing errors
 	"queues": {
 		"consumers": [

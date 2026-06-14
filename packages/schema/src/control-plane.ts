@@ -16,6 +16,12 @@ export const organizations = sqliteTable("organizations", {
   id: text("id").primaryKey(),
   slug: text("slug").unique().notNull(),
   name: text("name").notNull(),
+  /** When true, the org may register kind=email notification endpoints. */
+  featuresEmailNotifications: integer("features_email_notifications", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
 });
 
 export const organizationMembers = sqliteTable("organization_members", {

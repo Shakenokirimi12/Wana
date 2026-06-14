@@ -56,6 +56,12 @@
       }
     ]
   },
+  // Cloudflare Email Sending — used by the dashboard's operator "テスト送信"
+  // for email-kind endpoints. Restricted to one verified destination address
+  // for now; remove `destination_address` once a verified domain is set up.
+  "send_email": [
+    { "name": "SEND_MAIL", "destination_address": "ken20051205@gmail.com" }
+  ],
   // Optional: deploy `plugins/webauthn-worker` as `wana-webauthn-plugin` and uncomment:
   // "services": [{ "binding": "AUTH_PLUGIN", "service": "wana-webauthn-plugin" }]
 }

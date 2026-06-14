@@ -27,6 +27,11 @@ const PAYLOAD_PREVIEW_MAX = 1024;
 interface DispatchEnv {
   DB_CONTROL: D1Database;
   WEBHOOK_KEK_V1?: string;
+  /** Cloudflare Email Sending binding (return type intentionally loose). */
+  SEND_MAIL?: {
+    send(m: import("cloudflare:email").EmailMessage): Promise<unknown>;
+  };
+  MAIL_FROM?: string;
 }
 
 export async function dispatchTestSend(
@@ -42,14 +47,12 @@ export async function dispatchTestSend(
   responseStatus: number | null;
   errorMessage: string | null;
 }> {
-  if (!env.WEBHOOK_KEK_V1) {
-    throw new Error("Webhook KEK が未設定です（管理者に連絡してください）");
-  }
   const db = createDb(env.DB_CONTROL);
 
   const ep = await db
     .select({
       id: notificationEndpoints.id,
+      kind: notificationEndpoints.kind,
       target: notificationEndpoints.target,
       secretEnc: notificationEndpoints.secretEnc,
       secretNonce: notificationEndpoints.secretNonce,
@@ -65,6 +68,9 @@ export async function dispatchTestSend(
     .limit(1);
   if (ep.length === 0) throw new Error("送信先が見つかりません");
   if (!ep[0].isActive) throw new Error("送信先が無効化されています");
+  if (ep[0].kind === "webhook" && !env.WEBHOOK_KEK_V1) {
+    throw new Error("Webhook KEK が未設定です（管理者に連絡してください）");
+  }
 
   const projectRow = await db
     .select({ name: projects.name })
@@ -75,41 +81,75 @@ export async function dispatchTestSend(
 
   const deliveryId = `ndv_${crypto.randomUUID().replace(/-/g, "")}`;
   const signedAt = Math.floor(Date.now() / 1000);
-  const body = JSON.stringify({
-    version: 1,
-    delivery_id: deliveryId,
-    event_kind: "test",
-    signed_at: signedAt,
-    project_id: args.projectId,
-    project_name: projectName,
-    test: { triggered_by_user_id: args.triggeredByUserId, at: signedAt },
-  });
 
   let status: "delivered" | "failed" | "rejected" = "failed";
   let responseStatus: number | null = null;
   let responseMs: number | null = null;
   let errorMessage: string | null = null;
+  let payloadPreview = "";
 
-  try {
-    const secret = await openWebhookSecret(env.WEBHOOK_KEK_V1, {
-      secretEnc: ep[0].secretEnc,
-      secretNonce: ep[0].secretNonce,
+  const started = Date.now();
+  if (ep[0].kind === "email") {
+    const subject = `[Wana] テスト通知: ${projectName}`;
+    const text =
+      `Wana からのテスト通知です。\nProject: ${projectName}\n` +
+      `Triggered by: ${args.triggeredByUserId}\nAt (unix): ${signedAt}\n\n` +
+      `受信できていれば設定は正常です。\n`;
+    payloadPreview = subject;
+    if (!env.SEND_MAIL || !env.MAIL_FROM) {
+      status = "rejected";
+      errorMessage = "email_not_configured";
+    } else {
+      try {
+        const { EmailMessage } = await import("cloudflare:email");
+        const raw =
+          `From: Wana <${env.MAIL_FROM}>\r\n` +
+          `To: ${ep[0].target}\r\n` +
+          `Subject: ${encodeSubject(subject)}\r\n` +
+          `MIME-Version: 1.0\r\n` +
+          `Content-Type: text/plain; charset="utf-8"\r\n` +
+          `Content-Transfer-Encoding: 8bit\r\n\r\n` +
+          text;
+        await env.SEND_MAIL.send(new EmailMessage(env.MAIL_FROM, ep[0].target, raw));
+        status = "delivered";
+      } catch (e) {
+        status = "rejected";
+        errorMessage = e instanceof Error ? e.message : "unknown error";
+      }
+    }
+    responseMs = Date.now() - started;
+  } else {
+    const body = JSON.stringify({
+      version: 1,
+      delivery_id: deliveryId,
+      event_kind: "test",
+      signed_at: signedAt,
+      project_id: args.projectId,
+      project_name: projectName,
+      test: { triggered_by_user_id: args.triggeredByUserId, at: signedAt },
     });
-    const sig = await signWebhookBody(secret, body, signedAt);
-    const result = await deliverWebhook({
-      url: ep[0].target,
-      body,
-      signatureHeader: buildSignatureHeader(signedAt, sig),
-      userAgent: USER_AGENT,
-    });
-    responseStatus = result.status;
-    responseMs = result.ms;
-    errorMessage = result.errorMessage ?? null;
-    status =
-      result.status >= 200 && result.status < 300 ? "delivered" : "failed";
-  } catch (err) {
-    status = "rejected";
-    errorMessage = err instanceof Error ? err.message : "unknown error";
+    payloadPreview = body.slice(0, PAYLOAD_PREVIEW_MAX);
+    try {
+      const secret = await openWebhookSecret(env.WEBHOOK_KEK_V1!, {
+        secretEnc: ep[0].secretEnc,
+        secretNonce: ep[0].secretNonce,
+      });
+      const sig = await signWebhookBody(secret, body, signedAt);
+      const result = await deliverWebhook({
+        url: ep[0].target,
+        body,
+        signatureHeader: buildSignatureHeader(signedAt, sig),
+        userAgent: USER_AGENT,
+      });
+      responseStatus = result.status;
+      responseMs = result.ms;
+      errorMessage = result.errorMessage ?? null;
+      status =
+        result.status >= 200 && result.status < 300 ? "delivered" : "failed";
+    } catch (err) {
+      status = "rejected";
+      errorMessage = err instanceof Error ? err.message : "unknown error";
+    }
   }
 
   const createdAt = new Date();
@@ -125,9 +165,18 @@ export async function dispatchTestSend(
     responseStatus,
     responseMs,
     errorMessage,
-    payloadPreview: body.slice(0, PAYLOAD_PREVIEW_MAX),
+    payloadPreview,
     createdAt,
     deliveredAt: status === "delivered" ? createdAt : null,
   });
   return { deliveryId, status, responseStatus, errorMessage };
+}
+
+function encodeSubject(subject: string): string {
+  // ASCII fast path
+  if (!/[^\x20-\x7E]/.test(subject)) return subject;
+  const utf8 = unescape(encodeURIComponent(subject));
+  let b64 = "";
+  for (let i = 0; i < utf8.length; i++) b64 += String.fromCharCode(utf8.charCodeAt(i));
+  return `=?UTF-8?B?${btoa(b64)}?=`;
 }
