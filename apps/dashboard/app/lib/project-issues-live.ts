@@ -55,15 +55,19 @@ export function projectIssuesLiveScript(
   // re-filter handles the free-text portion only — if any token looks
   // structured we accept all rows the server sent rather than flicker the
   // wrong subset.
-  var STRUCTURED_RE = /(^|\s)!?(?:has:|[a-z0-9._-]{1,64}:)/;
+  // NOTE: this whole function body is inside an outer TS template literal —
+  // every \\ here decodes to a single \\ in the rendered JS. Without doubling
+  // them, \\s becomes a literal "s" and the regex breaks the entire script
+  // with a SyntaxError, freezing the live indicator at "接続中…".
+  var STRUCTURED_RE = /(^|\\s)!?(?:has:|[a-z0-9._-]{1,64}:)/;
   var searchHasStructured = STRUCTURED_RE.test(searchTerm);
   var freeTextTokens = searchHasStructured
     ? [] // server already filtered; accept all
-    : searchTerm.split(/\s+/).filter(Boolean);
+    : searchTerm.split(/\\s+/).filter(Boolean);
   function matchesSearch(r) {
     if (freeTextTokens.length === 0) return true;
     var hay = (
-      String(r.value || "") + "\n" + String(r.type || "") + "\n" + String(r.culprit || "")
+      String(r.value || "") + "\\n" + String(r.type || "") + "\\n" + String(r.culprit || "")
     ).toLowerCase();
     for (var i = 0; i < freeTextTokens.length; i++) {
       if (hay.indexOf(freeTextTokens[i]) === -1) return false;

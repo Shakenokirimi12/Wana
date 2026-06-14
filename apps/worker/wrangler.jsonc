@@ -46,14 +46,16 @@
 	],
 	"vars": {
 		"DASHBOARD_PUBLIC_URL": "https://wana.shakenokiri.me",
-		"MAIL_FROM": "noreply@example.com"
+		"MAIL_FROM": "wana@shakenokiri.me"
 	},
-	// Cloudflare Email Sending binding for email notifications. Restricted to
-	// a single destination address — change to `allowed_destination_addresses:
-	// [...]` or remove the address field once a verified domain is set up so
-	// the binding can send to arbitrary recipients.
+	// Cloudflare Email Sending binding for email notifications.
+	// `shakenokiri.me` is verified at the account level, so SEND_MAIL can
+	// emit from any address on the domain. No per-binding destination cap
+	// — endpoints decide their own recipients; SSRF-style guardrails for
+	// arbitrary recipients are not needed because the org has to enable the
+	// email channel via the per-org features flag before any rule can fire.
 	"send_email": [
-		{ "name": "SEND_MAIL", "destination_address": "ken20051205@gmail.com" }
+		{ "name": "SEND_MAIL" }
 	],
 	// Queue consumer for processing errors
 	"queues": {
