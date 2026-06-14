@@ -27,11 +27,6 @@ const PAYLOAD_PREVIEW_MAX = 1024;
 interface DispatchEnv {
   DB_CONTROL: D1Database;
   WEBHOOK_KEK_V1?: string;
-  /** Cloudflare Email Sending binding (return type intentionally loose). */
-  SEND_MAIL?: {
-    send(m: import("cloudflare:email").EmailMessage): Promise<unknown>;
-  };
-  MAIL_FROM?: string;
 }
 
 export async function dispatchTestSend(
@@ -90,33 +85,14 @@ export async function dispatchTestSend(
 
   const started = Date.now();
   if (ep[0].kind === "email") {
-    const subject = `[Wana] テスト通知: ${projectName}`;
-    const text =
-      `Wana からのテスト通知です。\nProject: ${projectName}\n` +
-      `Triggered by: ${args.triggeredByUserId}\nAt (unix): ${signedAt}\n\n` +
-      `受信できていれば設定は正常です。\n`;
-    payloadPreview = subject;
-    if (!env.SEND_MAIL || !env.MAIL_FROM) {
-      status = "rejected";
-      errorMessage = "email_not_configured";
-    } else {
-      try {
-        const { EmailMessage } = await import("cloudflare:email");
-        const raw =
-          `From: Wana <${env.MAIL_FROM}>\r\n` +
-          `To: ${ep[0].target}\r\n` +
-          `Subject: ${encodeSubject(subject)}\r\n` +
-          `MIME-Version: 1.0\r\n` +
-          `Content-Type: text/plain; charset="utf-8"\r\n` +
-          `Content-Transfer-Encoding: 8bit\r\n\r\n` +
-          text;
-        await env.SEND_MAIL.send(new EmailMessage(env.MAIL_FROM, ep[0].target, raw));
-        status = "delivered";
-      } catch (e) {
-        status = "rejected";
-        errorMessage = e instanceof Error ? e.message : "unknown error";
-      }
-    }
+    // Cloudflare Pages cannot bind SEND_MAIL — that binding is Worker-only.
+    // Email deliveries originate from wana-worker on real issue.created
+    // events. Operator test-send for email-kind endpoints is intentionally
+    // a no-op here; record it as `rejected` with a helpful message.
+    status = "rejected";
+    errorMessage =
+      "メール送信は wana-worker でのみ実行されます。実 issue 発生時に配信されます。";
+    payloadPreview = `[Wana] test-send to ${ep[0].target} (worker-only)`;
     responseMs = Date.now() - started;
   } else {
     const body = JSON.stringify({
@@ -170,13 +146,4 @@ export async function dispatchTestSend(
     deliveredAt: status === "delivered" ? createdAt : null,
   });
   return { deliveryId, status, responseStatus, errorMessage };
-}
-
-function encodeSubject(subject: string): string {
-  // ASCII fast path
-  if (!/[^\x20-\x7E]/.test(subject)) return subject;
-  const utf8 = unescape(encodeURIComponent(subject));
-  let b64 = "";
-  for (let i = 0; i < utf8.length; i++) b64 += String.fromCharCode(utf8.charCodeAt(i));
-  return `=?UTF-8?B?${btoa(b64)}?=`;
 }

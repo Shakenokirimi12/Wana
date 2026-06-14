@@ -59,4 +59,8 @@ export type Env = {
    * is only for operator-initiated tests from the Notifications UI.
    */
   WEBHOOK_KEK_V1?: string;
+
+  // NOTE: SEND_MAIL is intentionally NOT on the dashboard. Pages
+  // configuration does not accept `send_email`; the worker handles all
+  // mail. See apps/worker/src/notifications/email-sender.ts.
 };
