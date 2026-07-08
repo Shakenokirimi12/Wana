@@ -7,6 +7,154 @@ import type {
   StackFrame,
 } from "@wana/types";
 
+/** One resolved frame as emitted by `apps/worker/src/symbolicate.ts`. */
+export interface SymbolicatedFrame {
+  address: string;
+  function?: string;
+  file?: string;
+  line?: number;
+  unresolved?: boolean;
+}
+
+/** Shape of `<r2-key>.symbols.json` written by the worker. */
+export interface SymbolsFile {
+  version: 1;
+  symbolsByUuid: Record<string, SymbolicatedFrame[]>;
+}
+
+function normalizeUuid(s: string | undefined): string | null {
+  if (!s) return null;
+  const u = s.replace(/-/g, "").toLowerCase();
+  return /^[0-9a-f]{32}$/.test(u) ? u : null;
+}
+
+function parseAddrBig(s: string | undefined): bigint | null {
+  if (!s) return null;
+  const t = s.trim().replace(/^0[xX]/, "");
+  if (!/^[0-9a-f]+$/i.test(t)) return null;
+  try {
+    return BigInt("0x" + t);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Overlay worker-resolved symbols onto the raw event payload. Mutates a deep
+ * copy so the original is left intact (the page also offers a raw-JSON
+ * fallback that should keep showing the unsymbolicated form). Returns the
+ * count of frames successfully named so the UI can show a "Symbolicated"
+ * badge with the resolved count.
+ */
+export function mergeSymbolicatedPayload(
+  payload: SentryEventPayload,
+  symbols: SymbolsFile | null | undefined
+): { payload: SentryEventPayload; resolved: number; totalNative: number } {
+  const images = payload.debug_meta?.images ?? [];
+  if (images.length === 0) {
+    return { payload, resolved: 0, totalNative: 0 };
+  }
+  // Build address-range table: which image owns a given PC.
+  const ranges: Array<{ uuid: string; base: bigint; end: bigint | null }> = [];
+  for (const img of images) {
+    const uuid = normalizeUuid(img.debug_id ?? img.code_id);
+    const base = parseAddrBig(img.image_addr);
+    if (!uuid || base == null) continue;
+    const size =
+      typeof img.image_size === "number" && img.image_size > 0
+        ? BigInt(img.image_size)
+        : null;
+    ranges.push({ uuid, base, end: size == null ? null : base + size });
+  }
+  if (ranges.length === 0) {
+    return { payload, resolved: 0, totalNative: 0 };
+  }
+  // Index symbols by uuid + address (decimal BigInt key so 0x and 0X variants
+  // collapse). Frames carry the address verbatim from the SDK, so we
+  // re-normalize it on lookup too. If no symbols file is available we
+  // still walk the frames so we can report `totalNative` for the
+  // "not symbolicated yet" badge.
+  const symbolsByUuidAddr = new Map<string, Map<string, SymbolicatedFrame>>();
+  if (symbols?.symbolsByUuid) {
+    for (const [uuid, frames] of Object.entries(symbols.symbolsByUuid)) {
+      const u = uuid.toLowerCase();
+      const inner = new Map<string, SymbolicatedFrame>();
+      for (const f of frames) {
+        const a = parseAddrBig(f.address);
+        if (a == null) continue;
+        inner.set(a.toString(10), f);
+      }
+      symbolsByUuidAddr.set(u, inner);
+    }
+  }
+  // Deep-clone exception/threads stacktraces only — keep top-level object
+  // identity to avoid copying breadcrumbs / contexts which can be large.
+  const cloned: SentryEventPayload = { ...payload };
+  let resolved = 0;
+  let totalNative = 0;
+
+  const applyFrames = (frames: StackFrame[]): StackFrame[] =>
+    frames.map((frame) => {
+      const addrBig = parseAddrBig(frame.instruction_addr);
+      if (addrBig == null) return frame;
+      totalNative += 1;
+      const range = ranges.find(
+        (r) =>
+          addrBig >= r.base && (r.end == null || addrBig < r.end)
+      );
+      if (!range) return frame;
+      // Stamp the owning image UUID even when no symbol matches — the
+      // GitHub-link renderer only needs uuid + filename + lineno, and
+      // a frame with `function` already set (e.g. pre-symbolicated by
+      // the Cocoa SDK) might still benefit from a source link.
+      const stamped: StackFrame = { ...frame, _wanaImageUuid: range.uuid };
+      const symbol = symbolsByUuidAddr
+        .get(range.uuid)
+        ?.get(addrBig.toString(10));
+      if (!symbol || symbol.unresolved) return stamped;
+      resolved += 1;
+      return {
+        ...stamped,
+        function: symbol.function || frame.function,
+        filename: symbol.file || frame.filename,
+        lineno: symbol.line ?? frame.lineno,
+      };
+    });
+
+  const applyStack = (
+    s: { frames?: StackFrame[] } | undefined
+  ): { frames: StackFrame[] } | undefined => {
+    if (!s?.frames) return s as { frames: StackFrame[] } | undefined;
+    return { ...s, frames: applyFrames(s.frames) };
+  };
+
+  if (cloned.exception?.values) {
+    cloned.exception = {
+      ...cloned.exception,
+      values: cloned.exception.values.map((v) => ({
+        ...v,
+        stacktrace: applyStack(v.stacktrace),
+      })),
+    };
+  }
+  // threads is not in our SentryEventPayload type yet but real iOS events
+  // include it; treat it as Record<string, unknown> and walk if present.
+  const threads = (payload as unknown as {
+    threads?: { values?: Array<{ stacktrace?: { frames?: StackFrame[] } }> };
+  }).threads;
+  if (Array.isArray(threads?.values)) {
+    const newThreads = {
+      ...threads,
+      values: threads.values.map((t) => ({
+        ...t,
+        stacktrace: applyStack(t.stacktrace),
+      })),
+    };
+    (cloned as unknown as Record<string, unknown>).threads = newThreads;
+  }
+  return { payload: cloned, resolved, totalNative };
+}
+
 /**
  * R2 に保存された生の Sentry イベント JSON を、スタックトレース・Breadcrumbs・
  * タグ等に整形して表示する (実装ガイド Step 4.4)。
@@ -25,9 +173,37 @@ function frameLocation(frame: StackFrame): string {
   return file;
 }
 
-function StackFrameRow(props: { frame: StackFrame; crashed: boolean }) {
-  const { frame, crashed } = props;
+/**
+ * Build a `github.com/<repo>/blob/<sha>/<file>#L<line>` URL when we have
+ * enough context. Returns null when the frame can't be linked — caller
+ * renders plain text.
+ */
+function frameGithubUrl(
+  frame: StackFrame,
+  gitContextByUuid: Record<string, { gitSha: string; gitRepo: string }>
+): string | null {
+  const uuid = frame._wanaImageUuid;
+  if (!uuid) return null;
+  const ctx = gitContextByUuid[uuid];
+  if (!ctx) return null;
+  const path = frame.filename || frame.abs_path;
+  if (!path) return null;
+  // Drop leading `./` and absolute-path noise so the path lines up with
+  // the repo layout. dSYM paths typically come through as relative
+  // (`Sources/Foo.swift`) but defensive cleanup is cheap.
+  const rel = path.replace(/^\.?\//, "").replace(/^\/+/, "");
+  const line = frame.lineno != null ? `#L${frame.lineno}` : "";
+  return `https://github.com/${ctx.gitRepo}/blob/${ctx.gitSha}/${rel}${line}`;
+}
+
+function StackFrameRow(props: {
+  frame: StackFrame;
+  crashed: boolean;
+  gitContextByUuid: Record<string, { gitSha: string; gitRepo: string }>;
+}) {
+  const { frame, crashed, gitContextByUuid } = props;
   const inApp = frame.in_app !== false;
+  const ghUrl = frameGithubUrl(frame, gitContextByUuid);
   return (
     <li
       className={`border-l-2 ${
@@ -57,13 +233,21 @@ function StackFrameRow(props: { frame: StackFrame; crashed: boolean }) {
             </span>
           ) : null}
         </div>
-        <span
-          className={`shrink-0 break-all text-right font-mono text-[11px] ${
-            inApp ? "text-kumo-subtle" : "text-kumo-subtle"
-          }`}
-        >
-          {frameLocation(frame)}
-        </span>
+        {ghUrl ? (
+          <a
+            href={ghUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 break-all text-right font-mono text-[11px] text-kumo-subtle underline decoration-kumo-hairline decoration-dotted underline-offset-2 hover:text-amber-400 hover:decoration-amber-500/60"
+            title="Open on GitHub"
+          >
+            {frameLocation(frame)}
+          </a>
+        ) : (
+          <span className="shrink-0 break-all text-right font-mono text-[11px] text-kumo-subtle">
+            {frameLocation(frame)}
+          </span>
+        )}
       </div>
       {inApp && frame.context_line ? (
         <div className="flex items-stretch gap-0 border-t border-kumo-hairline bg-kumo-recessed font-mono text-[12px]">
@@ -79,8 +263,12 @@ function StackFrameRow(props: { frame: StackFrame; crashed: boolean }) {
   );
 }
 
-function ExceptionView(props: { exception: SentryException; isLast: boolean }) {
-  const { exception, isLast } = props;
+function ExceptionView(props: {
+  exception: SentryException;
+  isLast: boolean;
+  gitContextByUuid: Record<string, { gitSha: string; gitRepo: string }>;
+}) {
+  const { exception, isLast, gitContextByUuid } = props;
   // Sentry orders frames oldest-first; show the crashing (newest) frame on top.
   const frames = exception.stacktrace?.frames
     ? [...exception.stacktrace.frames].reverse()
@@ -128,7 +316,11 @@ function ExceptionView(props: { exception: SentryException; isLast: boolean }) {
                   i > 0 ? "border-t border-kumo-hairline" : undefined
                 }
               >
-                <StackFrameRow frame={frame} crashed={i === crashIndex} />
+                <StackFrameRow
+                  frame={frame}
+                  crashed={i === crashIndex}
+                  gitContextByUuid={gitContextByUuid}
+                />
               </li>
             ))}
           </ul>
@@ -235,8 +427,46 @@ function Section(props: {
   );
 }
 
-export function EventPayloadView(props: { payload: SentryEventPayload }) {
-  const { payload } = props;
+export function EventPayloadView(props: {
+  payload: SentryEventPayload;
+  /** Optional symbolicate summary: how many native frames resolved. */
+  symbolicate?: {
+    resolved: number;
+    totalNative: number;
+    /** When true, render the unresolved stub (used when no symbols.json
+     *  exists yet, so users see the affordance to re-run). */
+    pending?: boolean;
+  };
+  /** Optional URL for the "Re-symbolicate" form. */
+  resymbolicateAction?: string;
+  /**
+   * Per-image git context (sha + owner/repo) used to turn frame
+   * filenames into GitHub deep-links. Empty/missing → plain text frames.
+   */
+  gitContextByUuid?: Record<string, { gitSha: string; gitRepo: string }>;
+  /**
+   * UUIDs of in-app images that have NO uploaded dSYM. When non-empty,
+   * the renderer shows an "Upload dSYM" prompt above the stack trace
+   * instead of the symbolicate progress badge. Empty / undefined means
+   * either the project has all images covered, or the event has no
+   * native frames at all.
+   */
+  missingDsymUuids?: string[];
+  /** Settings → Debug files URL (manual upload affordance). */
+  uploadDsymHref?: string;
+  /** Top-page Guide URL (CLI + Run Script howto). */
+  guideHref?: string;
+}) {
+  const {
+    payload,
+    symbolicate,
+    resymbolicateAction,
+    missingDsymUuids,
+    uploadDsymHref,
+    guideHref,
+  } = props;
+  const gitContextByUuid = props.gitContextByUuid ?? {};
+  const missingCount = missingDsymUuids?.length ?? 0;
   const exceptions = payload.exception?.values ?? [];
   const breadcrumbs = payload.breadcrumbs ?? [];
   const tags = payload.tags ? Object.entries(payload.tags) : [];
@@ -259,11 +489,79 @@ export function EventPayloadView(props: { payload: SentryEventPayload }) {
     <div>
       {exceptions.length > 0 ? (
         <Section title="Stack trace">
+          {missingCount > 0 && symbolicate?.pending ? (
+            <div className="mb-5 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-4">
+              <p className="mb-1 text-sm font-semibold text-amber-300">
+                dSYM 未アップロード ─ 関数名・行番号が解決できません
+              </p>
+              <p className="mb-3 text-xs leading-relaxed text-kumo-subtle">
+                このクラッシュには{" "}
+                <span className="font-mono tabular-nums text-kumo-default">
+                  {missingCount}
+                </span>{" "}
+                個のアプリ image が含まれていますが、対応する dSYM が Wana
+                に登録されていません。次のいずれかでアップロードしてください。
+              </p>
+              <div className="mb-3 rounded-md border border-kumo-hairline bg-kumo-base/60 p-3 font-mono text-[11px] leading-relaxed text-kumo-default">
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-kumo-subtle">
+                  Xcode Run Script (自動)
+                </div>
+                <span className="text-kumo-subtle">$ </span>
+                npm install -g @wanahq/cli
+                <br />
+                <span className="text-kumo-subtle">$ </span>
+                wana upload-dif "$DWARF_DSYM_FOLDER_PATH"
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                {uploadDsymHref ? (
+                  <a
+                    href={uploadDsymHref}
+                    className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 font-medium text-amber-300 hover:bg-amber-500/25"
+                  >
+                    Settings で手動アップロード
+                  </a>
+                ) : null}
+                {guideHref ? (
+                  <a
+                    href={guideHref}
+                    className="inline-flex items-center rounded-full border border-kumo-hairline bg-kumo-recessed px-3 py-1 font-medium text-kumo-default hover:border-amber-500/40 hover:text-amber-300"
+                  >
+                    Guide を開く
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {symbolicate && symbolicate.totalNative > 0 && missingCount === 0 ? (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px]">
+              {symbolicate.pending ? (
+                <span className="rounded-full border border-kumo-hairline bg-kumo-recessed px-2 py-0.5 font-medium text-kumo-subtle">
+                  Symbolicate 待機中
+                </span>
+              ) : (
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-medium tabular-nums text-emerald-300">
+                  Symbolicated {symbolicate.resolved} / {symbolicate.totalNative}
+                </span>
+              )}
+              {resymbolicateAction ? (
+                <form method="post" action={resymbolicateAction}>
+                  <button
+                    type="submit"
+                    className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-300 hover:bg-amber-500/20"
+                  >
+                    Re-symbolicate
+                  </button>
+                </form>
+              ) : null}
+            </div>
+          ) : null}
           {exceptions.map((exc, i) => (
             <ExceptionView
               key={i}
               exception={exc}
               isLast={i === exceptions.length - 1}
+              gitContextByUuid={gitContextByUuid}
             />
           ))}
         </Section>

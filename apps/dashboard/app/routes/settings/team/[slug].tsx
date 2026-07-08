@@ -2,7 +2,9 @@ import { createRoute } from "honox/factory";
 
 import {
   createOrganizationInvite,
+  getOrgFeatures,
   getOrgMembership,
+  getUserDisplayById,
   listOrganizationMembersWithProfiles,
   listPendingInvitesForOrg,
   orgRoleAtLeast,
@@ -16,7 +18,9 @@ import {
   listAuditEventsForOrg,
 } from "@/data/control-plane";
 import { sendTransactionalEmail } from "@/lib/email";
+import { buildInviteEmail } from "@/lib/invite-email";
 import { getDashboardUserId } from "@/lib/dashboard-user";
+import { loadShellSidebar } from "@/lib/shell-data";
 import {
   Badge,
   ButtonDestructiveOutline,
@@ -70,11 +74,17 @@ export default createRoute(async (c) => {
     return c.redirect("/login");
   }
 
+  const sidebar = await loadShellSidebar(c, userId);
   const resolved = await resolveOrganizationBySlug(c.env.DB_CONTROL, rawSlug);
 
   if (!resolved) {
     return c.render(
-      <Shell title="Team not found" auth="signed-in">
+      <Shell
+        currentPath={c.req.path}
+        title="Team not found"
+        auth="signed-in"
+        {...sidebar}
+      >
         <PageHeader title="チームが見つかりません" description="" />
         <Card className="max-w-lg p-6">
           <p className="text-sm text-kumo-subtle">
@@ -102,7 +112,12 @@ export default createRoute(async (c) => {
   );
   if (!role) {
     return c.render(
-      <Shell title="Access denied" auth="signed-in">
+      <Shell
+        currentPath={c.req.path}
+        title="Access denied"
+        auth="signed-in"
+        {...sidebar}
+      >
         <PageHeader
           title="このチームにアクセスできません"
           description="メンバーではありません。"
@@ -116,6 +131,7 @@ export default createRoute(async (c) => {
   }
 
   const canAdmin = orgRoleAtLeast(role, "admin");
+  const orgFeatures = await getOrgFeatures(c.env.DB_CONTROL, resolved.orgId);
   const members = await listOrganizationMembersWithProfiles(
     c.env.DB_CONTROL,
     resolved.orgId
@@ -131,9 +147,10 @@ export default createRoute(async (c) => {
 
   return c.render(
     <Shell
+      currentPath={c.req.path}
       title={`Team ${resolved.slug}`}
-
       auth="signed-in"
+      {...sidebar}
     >
       <PageHeader
         title={resolved.name}
@@ -225,9 +242,15 @@ export default createRoute(async (c) => {
                 defaultValue="link"
               >
                 <option value="link">リンク招待（誰でも／上限と期限で制御）</option>
-                <option value="email">
-                  メール宛招待（そのメールのアカウントのみ・送信を試行）
-                </option>
+                {orgFeatures.emailNotifications ? (
+                  <option value="email">
+                    メール宛招待（指定アドレス宛に招待メールを送信）
+                  </option>
+                ) : (
+                  <option value="email" disabled>
+                    メール宛招待（組織プランで有効化が必要）
+                  </option>
+                )}
               </SelectField>
               <InputField
                 label="招待メールアドレス（チャネルがメールのとき）"
@@ -235,7 +258,10 @@ export default createRoute(async (c) => {
                 placeholder="colleague@example.com"
               />
               <p className="text-xs text-kumo-subtle">
-                作成後、秘密トークン付き URL を一度だけ画面に表示します。メール送信が有効な環境では招待メールも送信されます。
+                作成後、秘密トークン付き URL を一度だけ画面に表示します。
+                {orgFeatures.emailNotifications
+                  ? "チャネルにメールを選ぶと、指定アドレス宛に招待メールも送信されます。"
+                  : "メール招待は組織プランで有効化されると選択できます。"}
               </p>
               <ButtonSecondary type="submit">招待を作成</ButtonSecondary>
             </form>
@@ -538,6 +564,17 @@ export const POST = createRoute(async (c) => {
           `${redirectBase}?e=${encodeURIComponent("メールアドレスを入力してください")}`
         );
       }
+      // Email invites are a paid-tier feature, gated by the same flag as
+      // notification email so a team admin can't silently send mail when
+      // their org isn't licensed.
+      const features = await getOrgFeatures(c.env.DB_CONTROL, resolved.orgId);
+      if (!features.emailNotifications) {
+        return c.redirect(
+          `${redirectBase}?e=${encodeURIComponent(
+            "このチームではメール招待が無効です（組織プランで有効化してください）"
+          )}`
+        );
+      }
     }
 
     try {
@@ -555,10 +592,29 @@ export const POST = createRoute(async (c) => {
 
       let emailNote: { ok: boolean; text: string } | null = null;
       if (channel === "email" && invitedEmail) {
+        // Same TTL clamp as createOrganizationInvite — recompute expiresAt
+        // for the email body so the displayed deadline matches the DB row.
+        const ttlMs =
+          Math.min(Math.max(Number(ttlHours) || 24, 1), 24 * 90) *
+          60 *
+          60 *
+          1000;
+        const expiresAt = new Date(Date.now() + ttlMs);
+        const inviter = await getUserDisplayById(c.env.DB_CONTROL, userId);
+        const built = buildInviteEmail({
+          teamName: resolved.name,
+          inviterDisplayName: inviter?.name ?? null,
+          inviterEmail: inviter?.email ?? null,
+          role: inviteRole,
+          inviteUrl,
+          expiresAt,
+          maxUses,
+        });
         const res = await sendTransactionalEmail(c.env, {
           to: invitedEmail,
-          subject: `${resolved.name} からの Wana 招待`,
-          text: `次のリンクから参加できます（期限内・回数制限あり）:\n${inviteUrl}\n`,
+          subject: built.subject,
+          text: built.text,
+          html: built.html,
         });
         emailNote = res.ok
           ? { ok: true, text: `${invitedEmail} 宛にメールを送信しました。` }
@@ -568,14 +624,20 @@ export const POST = createRoute(async (c) => {
             };
       }
 
+      const sidebar = await loadShellSidebar(c, userId);
       return c.render(
-        <Shell title="招待を作成しました" auth="signed-in">
+        <Shell
+          currentPath={c.req.path}
+          title="招待を作成しました"
+          auth="signed-in"
+          {...sidebar}
+        >
           <PageHeader
             title="招待 URL（この画面を離れると再表示できません）"
             description="リンクをコピーして共有してください。"
           />
           <Card className="max-w-3xl space-y-4 p-6">
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-kumo-hairline bg-kumo-recessed p-4 font-mono text-sm text-amber-100/90">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-kumo-hairline bg-kumo-recessed p-4 font-mono text-sm text-kumo-default">
               {inviteUrl}
             </pre>
             {emailNote ? (

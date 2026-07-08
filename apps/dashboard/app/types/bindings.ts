@@ -11,6 +11,13 @@ export type Env = {
   DB_CONTROL: D1Database;
   PAYLOAD_STORAGE: R2Bucket;
   PROJECT_DO: DurableObjectNamespace<ProjectDataStore>;
+  /**
+   * Workers Container running llvm-symbolizer. Lives in `wana-worker`;
+   * we bind to it from Pages via `script_name`. Call it through
+   * `env.SYMBOLICATOR.getByName(<uuid>)` so warm instances re-use the same
+   * dSYM pages.
+   */
+  SYMBOLICATOR: DurableObjectNamespace<import("@wana/worker/symbolicator").Symbolicator>;
   /** Cloudflare Email Sending — optional until domain is onboarded. */
   SEND_MAIL?: SendEmail;
   /** Public ingest origin for DSN display (no trailing slash). */
@@ -63,4 +70,16 @@ export type Env = {
   // NOTE: SEND_MAIL is intentionally NOT on the dashboard. Pages
   // configuration does not accept `send_email`; the worker handles all
   // mail. See apps/worker/src/notifications/email-sender.ts.
+
+  /**
+   * Service binding to wana-worker. Used for invite-email delivery via
+   * POST /__internal/send-mail. See `apps/dashboard/app/lib/email.ts`.
+   */
+  MAIL_SERVICE?: Fetcher;
+  /**
+   * Shared secret authenticating the dashboard's calls to the worker's
+   * /__internal/send-mail endpoint. Must match the same value set on
+   * wana-worker via `wrangler secret put INTERNAL_RPC_SECRET`.
+   */
+  INTERNAL_RPC_SECRET?: string;
 };

@@ -7,6 +7,7 @@ import {
   deleteWebAuthnCredential,
 } from "@/data/control-plane";
 import { getDashboardUserId } from "@/lib/dashboard-user";
+import { loadShellSidebar } from "@/lib/shell-data";
 import {
   ButtonDestructiveOutline,
   ButtonPrimary,
@@ -29,11 +30,17 @@ export default createRoute(async (c) => {
   const user = await getUserDisplayById(c.env.DB_CONTROL, uid);
   if (!user) return c.redirect("/login");
   const passkeys = await listWebAuthnCredentialsForUser(c.env.DB_CONTROL, uid);
+  const sidebar = await loadShellSidebar(c, uid);
   const err = c.req.query("e");
   const ok = c.req.query("ok");
 
   return c.render(
-    <Shell title="Account settings" auth="signed-in">
+    <Shell
+      currentPath={c.req.path}
+      title="Account settings"
+      auth="signed-in"
+      {...sidebar}
+    >
       <PageHeader
         title="アカウント設定"
         description="表示名とパスキー（ログイン用の認証器）を管理します。"

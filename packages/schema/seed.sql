@@ -19,12 +19,13 @@ VALUES ('org_01', 'test-org', 'Test Organization');
 INSERT OR REPLACE INTO organization_members (id, org_id, user_id, role)
 VALUES ('member_01', 'org_01', 'user_01', 'owner');
 
-INSERT INTO projects (id, org_id, name, do_id, created_at)
+INSERT INTO projects (id, org_id, name, do_id, external_id, created_at)
 VALUES (
   'proj_01',
   'org_01',
   'Wana test project',
   'wana:proj_01',
+  100000001,
   1714665600000
 );
 

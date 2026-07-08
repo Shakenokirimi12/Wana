@@ -28,11 +28,17 @@ function resolveCacheTtlMs(raw: string | undefined): number {
 
 export const authMiddleware = createMiddleware<{ Bindings: Env }>(
   async (c, next) => {
-    const projectId = c.req.param("projectId");
+    // The URL segment is the DSN's numeric external id, not the project's
+    // slug id — @sentry/core rejects non-numeric DSN project ids in most
+    // consumer builds (see external_id's doc comment in
+    // packages/schema/src/control-plane.ts). We resolve it to the real
+    // project row (and its slug `id`) below.
+    const externalIdRaw = c.req.param("projectId");
 
-    if (!projectId) {
+    if (!externalIdRaw || !/^\d+$/.test(externalIdRaw)) {
       return c.json({ error: "Missing project ID" }, 400);
     }
+    const externalId = Number(externalIdRaw);
 
     const sentryKey = extractSentryKeyFromRequest(c.req);
     if (!sentryKey) {
@@ -43,7 +49,7 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(
     }
 
     const keyHash = await hashDsn(sentryKey);
-    const cacheKey = `${projectId}:${keyHash}`;
+    const cacheKey = `${externalId}:${keyHash}`;
     const now = Date.now();
 
     // Check cache first
@@ -64,7 +70,7 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(
       })
       .from(apiKeys)
       .innerJoin(projects, eq(apiKeys.projectId, projects.id))
-      .where(and(eq(apiKeys.keyHash, keyHash), eq(projects.id, projectId)))
+      .where(and(eq(apiKeys.keyHash, keyHash), eq(projects.externalId, externalId)))
       .limit(1);
 
     if (result.length === 0) {

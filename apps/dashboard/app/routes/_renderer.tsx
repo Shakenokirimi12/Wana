@@ -19,6 +19,7 @@ export default reactRenderer(({ children, title, c }) => {
           media="(prefers-color-scheme: dark)"
         />
         <meta name="color-scheme" content="light dark" />
+        <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
         {title ? <title>{title}</title> : <title>Wana</title>}
         {import.meta.env.PROD ? (
           <>

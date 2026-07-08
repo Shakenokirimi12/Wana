@@ -25,10 +25,17 @@ export interface ParsedSearchQuery {
   negHasKeys: string[];
   /** Free text tokens — matched against issue value / type / culprit (substring). */
   freeText: string[];
+  /** `assignee:<userId>` filter — null means no constraint, "" means unassigned. */
+  assignees: string[];
+  /** `!assignee:<userId>` filter. */
+  negAssignees: string[];
+  /** `is:assigned` / `is:unassigned` — true ⇒ assigned, false ⇒ unassigned, null ⇒ no filter. */
+  assignedState: boolean | null;
 }
 
 const KEY_RE = /^[a-z0-9._-]{1,64}$/;
 const IS_VALUES = new Set(["unresolved", "resolved", "ignored", "all"]);
+const ASSIGNED_IS_VALUES = new Set(["assigned", "unassigned"]);
 
 export function parseSearchQuery(raw: string): ParsedSearchQuery {
   const out: ParsedSearchQuery = {
@@ -38,6 +45,9 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
     hasKeys: [],
     negHasKeys: [],
     freeText: [],
+    assignees: [],
+    negAssignees: [],
+    assignedState: null,
   };
   const tokens = tokenize(raw);
   for (const tok of tokens) {
@@ -62,7 +72,13 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
     }
     if (key === "is") {
       const v = value.toLowerCase();
-      if (IS_VALUES.has(v)) out.status = v as ParsedSearchQuery["status"];
+      if (IS_VALUES.has(v)) {
+        out.status = v as ParsedSearchQuery["status"];
+      } else if (ASSIGNED_IS_VALUES.has(v)) {
+        // `!is:assigned` ⇒ unassigned; `!is:unassigned` ⇒ assigned.
+        const assignedTrue = v === "assigned";
+        out.assignedState = neg ? !assignedTrue : assignedTrue;
+      }
       continue;
     }
     if (key === "has") {
@@ -70,6 +86,13 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
       if (k && KEY_RE.test(k)) {
         (neg ? out.negHasKeys : out.hasKeys).push(k);
       }
+      continue;
+    }
+    if (key === "assignee") {
+      // Plain string match — caller normalizes @me to a real userId before
+      // calling parseSearchQuery (so this layer stays stateless).
+      if (!value) continue;
+      (neg ? out.negAssignees : out.assignees).push(value);
       continue;
     }
     if (!value) continue;
@@ -126,6 +149,8 @@ export interface IssueLike {
   culprit: string | null;
   /** All tag maps from every event in this issue. */
   eventTagMaps: Record<string, string>[];
+  /** Control-plane user id of the current assignee, or null. */
+  assigneeUserId?: string | null;
 }
 
 export function matchIssue(issue: IssueLike, q: ParsedSearchQuery): boolean {
@@ -166,6 +191,20 @@ export function matchIssue(issue: IssueLike, q: ParsedSearchQuery): boolean {
   for (const nk of q.negHasKeys) {
     const hit = issue.eventTagMaps.some((tags) => tags[nk] != null);
     if (hit) return false;
+  }
+
+  // Assignee filters. `is:assigned` / `is:unassigned` cuts before the
+  // explicit list so the user can write `is:assigned !assignee:bot-xyz`
+  // and have it behave as expected.
+  const assignee = issue.assigneeUserId ?? null;
+  if (q.assignedState === true && assignee == null) return false;
+  if (q.assignedState === false && assignee != null) return false;
+  if (q.assignees.length > 0) {
+    if (assignee == null) return false;
+    if (!q.assignees.some((a) => a === assignee)) return false;
+  }
+  if (q.negAssignees.length > 0 && assignee != null) {
+    if (q.negAssignees.some((a) => a === assignee)) return false;
   }
 
   return true;

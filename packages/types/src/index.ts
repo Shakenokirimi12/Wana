@@ -43,6 +43,29 @@ export interface StackFrame {
   pre_context?: string[];
   post_context?: string[];
   in_app?: boolean;
+  /** Native (Mach-O/ELF) program counter — present on iOS/macOS/Android. */
+  instruction_addr?: string;
+  /**
+   * Internal: image UUID that owns this frame's instruction_addr. Stamped
+   * by `mergeSymbolicatedPayload` so the renderer can join against
+   * `gitContextByUuid` without re-walking `debug_meta.images`.
+   */
+  _wanaImageUuid?: string;
+}
+
+/** One native image (binary or dSYM) referenced by a native event. */
+export interface DebugImage {
+  /** Mach-O/ELF debug UUID (with or without dashes). */
+  debug_id?: string;
+  /** Optional alt UUID field used by some SDKs. */
+  code_id?: string;
+  /** Load address as 0x-prefixed hex. */
+  image_addr?: string;
+  /** Mapped size in bytes. */
+  image_size?: number;
+  type?: string;
+  code_file?: string;
+  debug_file?: string;
 }
 
 export interface Breadcrumb {
@@ -82,6 +105,10 @@ export interface SentryEventPayload {
   /** captureMessage / logger-only events */
   message?: string;
   logger?: string;
+  /** Native debug-info metadata (iOS/macOS/Android). */
+  debug_meta?: {
+    images?: DebugImage[];
+  };
 }
 
 export interface ParsedEnvelope {

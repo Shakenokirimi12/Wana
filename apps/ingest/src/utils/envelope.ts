@@ -8,10 +8,10 @@ import type {
 const dec = new TextDecoder("utf-8");
 
 export type IngestEnvelopeResult =
-  | { kind: "malformed" }
+  | { kind: "malformed"; itemTypes: string[] }
   /** Parsed OK (client_report / session / transaction-only, etc.) — accept like Sentry, do not queue. */
-  | { kind: "noop" }
-  | { kind: "queue"; envelope: ParsedEnvelope };
+  | { kind: "noop"; itemTypes: string[] }
+  | { kind: "queue"; envelope: ParsedEnvelope; itemTypes: string[] };
 
 /**
  * Sentry envelope (RFC-style): header JSON line, then repeated { item header line, payload }.
@@ -38,13 +38,15 @@ export function parseEnvelope(body: string): IngestEnvelopeResult {
     return JSON.parse(line);
   }
 
+  const items: ParsedEnvelope["items"] = [];
+  const itemTypes = (): string[] =>
+    items.map((i) => (typeof i.header.type === "string" ? i.header.type : "?")).slice(0, 12);
+
   try {
     const headerUnknown = readJsonLine() as Record<string, unknown> | null;
     if (!headerUnknown || typeof headerUnknown !== "object") {
-      return { kind: "malformed" };
+      return { kind: "malformed", itemTypes: itemTypes() };
     }
-
-    const items: ParsedEnvelope["items"] = [];
 
     while (offset < bytes.length) {
       while (offset < bytes.length && bytes[offset] === 0x0a) offset++;
@@ -79,12 +81,12 @@ export function parseEnvelope(body: string): IngestEnvelopeResult {
       items
     );
     if (normalized) {
-      return { kind: "queue", envelope: normalized };
+      return { kind: "queue", envelope: normalized, itemTypes: itemTypes() };
     }
-    return { kind: "noop" };
+    return { kind: "noop", itemTypes: itemTypes() };
   } catch (error) {
     console.error("Failed to parse envelope:", error);
-    return { kind: "malformed" };
+    return { kind: "malformed", itemTypes: itemTypes() };
   }
 }
 

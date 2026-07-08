@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { cac } from "cac";
@@ -271,6 +277,241 @@ cli
 
     console.log("\nAll deployments finished.");
   });
+
+// ── upload-dif ─────────────────────────────────────────────────────────────
+
+/**
+ * Parse a Sentry/Wana DSN of the form
+ *   https://<publicKey>@<ingestHost>/<projectId>
+ * Returns null for anything that doesn't match — callers fall through to a
+ * clear error message instead of stumbling into a confusing 404.
+ */
+function parseDsn(
+  raw: string | undefined
+): { publicKey: string; host: string; projectId: string } | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const publicKey = u.username || "";
+    const projectId = decodeURIComponent(u.pathname.replace(/^\/+|\/+$/g, ""));
+    if (!publicKey || !projectId) return null;
+    return { publicKey, host: u.host, projectId };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Default the dashboard hostname from the DSN host by stripping a leading
+ * `ingest.` (the convention this codebase uses:
+ * `ingest.wana.example` → `wana.example`). The caller may override with
+ * `--api-url`. Falls back to the ingest host if no `ingest.` prefix exists.
+ */
+function deriveDashboardOrigin(ingestHost: string): string {
+  const host = ingestHost.replace(/^ingest\./i, "");
+  return `https://${host}`;
+}
+
+/** Resolve `git rev-parse HEAD` + `git remote get-url origin` (best-effort). */
+function readGitContext(cwd: string): { sha: string | null; repo: string | null } {
+  const shaRes = run("git", ["rev-parse", "HEAD"], cwd);
+  const remoteRes = run("git", ["remote", "get-url", "origin"], cwd);
+  const sha = shaRes.ok && /^[0-9a-f]{7,64}$/i.test(shaRes.out) ? shaRes.out : null;
+  let repo: string | null = null;
+  if (remoteRes.ok) {
+    // Accepted forms: `https://github.com/<owner>/<repo>(.git)?`
+    //                 `git@github.com:<owner>/<repo>(.git)?`
+    const m =
+      remoteRes.out.match(/github\.com[:/]+([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?$/);
+    if (m) repo = `${m[1]}/${m[2]}`;
+  }
+  return { sha, repo };
+}
+
+/**
+ * Walk a directory looking for Mach-O binaries inside `.dSYM` bundles
+ * AND `.debug.dylib` sidecars (Xcode 14+ Debug builds keep DWARF in the
+ * `.debug.dylib` next to the main binary instead of a `.dSYM`). Returns
+ * absolute paths to each binary we'd send to the server.
+ */
+function findCandidates(root: string): string[] {
+  const out: string[] = [];
+  const visit = (dir: string, depth: number): void => {
+    if (depth > 8) return;
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      const full = join(dir, name);
+      let st;
+      try {
+        st = statSync(full);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        if (name.endsWith(".dSYM")) {
+          // Pull every Mach-O under Contents/Resources/DWARF (one per arch).
+          const dwarfDir = join(full, "Contents/Resources/DWARF");
+          if (existsSync(dwarfDir)) {
+            for (const f of readdirSync(dwarfDir)) {
+              out.push(join(dwarfDir, f));
+            }
+          }
+          continue;
+        }
+        visit(full, depth + 1);
+      } else if (st.isFile() && name.endsWith(".debug.dylib")) {
+        out.push(full);
+      }
+    }
+  };
+  visit(root, 0);
+  return out;
+}
+
+/**
+ * Read Mach-O LC_UUID via `dwarfdump --uuid` (ships with Xcode CLT — this
+ * CLI is mac-only because dSYMs are). One row per arch:
+ *   `UUID: <hex>-<hex>-...-<hex> (<arch>) <path>`
+ * Returns the first arch found; for fat dSYMs we only ship the first slice
+ * — Wana's debug_files index is UUID-keyed and we de-dupe per UUID anyway.
+ */
+function machoUuid(path: string): { uuid: string; arch: string | null } | null {
+  const r = run("dwarfdump", ["--uuid", path], process.cwd());
+  if (!r.ok) return null;
+  const m = r.out.match(
+    /UUID:\s*([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})\s*\(([^)]+)\)/i
+  );
+  if (!m) return null;
+  return { uuid: m[1].replace(/-/g, "").toLowerCase(), arch: m[2] || null };
+}
+
+async function uploadOne(
+  apiUrl: string,
+  projectId: string,
+  publicKey: string,
+  path: string,
+  git: { sha: string | null; repo: string | null }
+): Promise<{ ok: boolean; uuid?: string; replaced?: boolean; error?: string }> {
+  const bytes = readFileSync(path);
+  const form = new FormData();
+  form.set(
+    "file",
+    new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }),
+    basename(path)
+  );
+  if (git.sha) form.set("git_sha", git.sha);
+  if (git.repo) form.set("git_repo", git.repo);
+  const url = `${apiUrl.replace(/\/+$/, "")}/p/${encodeURIComponent(projectId)}/debug-files`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "X-Sentry-Auth": `sentry_key=${publicKey}` },
+      body: form,
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  const text = await res.text();
+  let json: { ok?: boolean; uuid?: string; replaced?: boolean; error?: string } = {};
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Non-JSON body (e.g. cookie-auth redirect) — surface raw text.
+    return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+  }
+  if (!res.ok || !json.ok) {
+    return { ok: false, error: json.error ?? `HTTP ${res.status}` };
+  }
+  return { ok: true, uuid: json.uuid, replaced: json.replaced };
+}
+
+cli
+  .command(
+    "upload-dif [path]",
+    "Upload dSYM / .debug.dylib symbol files to Wana. Defaults to scanning the cwd."
+  )
+  .option("--dsn <url>", "Project DSN. Falls back to $WANA_DSN or $SENTRY_DSN.")
+  .option(
+    "--api-url <url>",
+    "Override dashboard origin. Defaults to DSN host with `ingest.` stripped."
+  )
+  .option("--git-sha <sha>", "Git SHA. Defaults to `git rev-parse HEAD`.")
+  .option(
+    "--git-repo <owner/repo>",
+    "GitHub `owner/repo`. Defaults to parsing `git remote get-url origin`."
+  )
+  .action(
+    async (
+      path: string | undefined,
+      options: {
+        dsn?: string;
+        apiUrl?: string;
+        gitSha?: string;
+        gitRepo?: string;
+      }
+    ) => {
+      const dsnRaw =
+        options.dsn ?? process.env.WANA_DSN ?? process.env.SENTRY_DSN;
+      const dsn = parseDsn(dsnRaw);
+      if (!dsn) {
+        console.error(
+          "✗ Missing/invalid DSN. Pass --dsn <url>, or set $WANA_DSN.\n" +
+            "  Expected: https://<publicKey>@<ingestHost>/<projectId>"
+        );
+        process.exit(1);
+      }
+      const apiUrl = options.apiUrl ?? deriveDashboardOrigin(dsn.host);
+      const root = path ? path : process.env.DWARF_DSYM_FOLDER_PATH ?? process.cwd();
+
+      // git context: CLI flags > git probe in `root` > git probe in cwd
+      const probe = readGitContext(root);
+      const probeCwd = readGitContext(process.cwd());
+      const git = {
+        sha: options.gitSha ?? probe.sha ?? probeCwd.sha,
+        repo: options.gitRepo ?? probe.repo ?? probeCwd.repo,
+      };
+
+      console.log(`Scanning: ${root}`);
+      const files = findCandidates(root);
+      if (files.length === 0) {
+        console.log("No .dSYM bundles or .debug.dylib sidecars found.");
+        return;
+      }
+      // Dedupe by UUID — Xcode often emits identical thin Mach-O slices in
+      // multiple build dirs; uploading the same UUID twice just churns R2.
+      const byUuid = new Map<string, { path: string; arch: string | null }>();
+      for (const f of files) {
+        const info = machoUuid(f);
+        if (!info) continue;
+        if (!byUuid.has(info.uuid)) byUuid.set(info.uuid, { path: f, arch: info.arch });
+      }
+      console.log(
+        `Found ${byUuid.size} unique image(s). git=${git.sha?.slice(0, 7) ?? "(none)"} repo=${git.repo ?? "(none)"}`
+      );
+
+      let okN = 0;
+      let failN = 0;
+      for (const [uuid, { path: p, arch }] of byUuid) {
+        process.stdout.write(`  ${uuid.slice(0, 8)}… (${arch ?? "?"}) ${basename(p)} … `);
+        const res = await uploadOne(apiUrl, dsn.projectId, dsn.publicKey, p, git);
+        if (res.ok) {
+          okN += 1;
+          console.log(res.replaced ? "ok (replaced)" : "ok");
+        } else {
+          failN += 1;
+          console.log(`fail: ${res.error}`);
+        }
+      }
+      console.log(`\nDone. uploaded=${okN} failed=${failN}`);
+      if (failN > 0) process.exit(1);
+    }
+  );
 
 cli.help();
 cli.version("0.1.0");

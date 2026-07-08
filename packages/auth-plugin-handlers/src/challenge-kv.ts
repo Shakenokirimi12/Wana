@@ -14,7 +14,14 @@ type ChallengeKv = {
 export type AuthChallengePayload = {
   kind: "authentication";
   challenge: string;
-  userId: string;
+  /**
+   * Optional. Present for legacy email-keyed flow (server-side picked the
+   * credential allow-list, so it already knows which user this assertion
+   * has to belong to). Absent for the discoverable / email-less flow,
+   * where the user identity is resolved from the credential row on
+   * verify.
+   */
+  userId?: string;
 };
 
 export type RegChallengePayload = {

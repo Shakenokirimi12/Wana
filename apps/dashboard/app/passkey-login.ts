@@ -14,7 +14,12 @@ function msg(el: HTMLElement | null, text: string): void {
 
 function readRoot(): {
   root: HTMLElement;
-  emailInput: HTMLInputElement;
+  /**
+   * Optional — login no longer asks for an email (we use the WebAuthn
+   * discoverable-credential flow instead). Still present on signup flows
+   * that explicitly want to bind the new passkey to a specific address.
+   */
+  emailInput: HTMLInputElement | null;
   statusEl: HTMLElement | null;
   enrollment: boolean;
   next: string;
@@ -24,9 +29,6 @@ function readRoot(): {
     return null;
   }
   const emailInput = root.querySelector<HTMLInputElement>('input[name="email"]');
-  if (!emailInput) {
-    return null;
-  }
   const statusEl = root.querySelector<HTMLElement>("[data-passkey-status]");
   const enrollment = root.dataset.enrollment === "true";
   const next = root.dataset.next?.trim() || "/";
@@ -52,10 +54,11 @@ async function runLogin(
   statusEl: HTMLElement | null
 ): Promise<void> {
   msg(statusEl, "");
+  // Empty `email` triggers the server's discoverable-credential branch.
   const opt = await postJson<{ optionsJSON: unknown; challengeKey: string } & {
     error?: string;
     message?: string;
-  }>("/api/webauthn/login/options", { email });
+  }>("/api/webauthn/login/options", email ? { email } : {});
 
   if (!opt.ok) {
     const err = opt.data as { error?: string; message?: string };
@@ -161,11 +164,9 @@ function bind(): void {
   );
 
   loginBtn?.addEventListener("click", async () => {
-    const email = emailInput.value.trim();
-    if (!email) {
-      msg(statusEl, "メールアドレスを入力してください。");
-      return;
-    }
+    // Email is optional on login — the empty case uses discoverable
+    // credentials and the browser shows every passkey for this RP.
+    const email = emailInput?.value.trim() ?? "";
     loginBtn.disabled = true;
     try {
       await runLogin(email, next, statusEl);
@@ -176,7 +177,7 @@ function bind(): void {
 
   if (enrollment && regBtn) {
     regBtn.addEventListener("click", async () => {
-      const email = emailInput.value.trim();
+      const email = emailInput?.value.trim() ?? "";
       if (!email) {
         msg(statusEl, "メールアドレスを入力してください。");
         return;

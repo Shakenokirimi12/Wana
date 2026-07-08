@@ -3,6 +3,7 @@ import {
   organizations,
   organizationMembers,
   organizationSlugRedirects,
+  projects,
   users,
 } from "@wana/schema/control-plane";
 import { normalizeOrgSlug } from "@wana/core";
@@ -115,6 +116,32 @@ export async function listOrganizationMembersWithProfiles(
     .innerJoin(users, eq(organizationMembers.userId, users.id))
     .where(eq(organizationMembers.orgId, orgId))
     .orderBy(asc(users.name));
+}
+
+/**
+ * Members of the project's owning org. Used by the issue-detail assignee
+ * dropdown so only people who actually have access to the project show up.
+ */
+export async function listProjectMembersForAssignee(
+  d1: D1Database,
+  projectId: string
+): Promise<
+  Array<{ userId: string; email: string; name: string; username: string | null }>
+> {
+  const db = createDb(d1);
+  const rows = await db
+    .select({
+      userId: users.id,
+      email: users.email,
+      name: users.name,
+      username: users.username,
+    })
+    .from(organizationMembers)
+    .innerJoin(users, eq(organizationMembers.userId, users.id))
+    .innerJoin(projects, eq(organizationMembers.orgId, projects.orgId))
+    .where(eq(projects.id, projectId))
+    .orderBy(asc(users.name));
+  return rows;
 }
 
 /** Change a member's role between member/admin (admin+; owners managed via transfer). */
@@ -282,6 +309,27 @@ export async function listOrganizations(d1: D1Database) {
     })
     .from(organizations)
     .orderBy(asc(organizations.name));
+}
+
+/**
+ * Per-org feature flags. Mirrors `getProjectFeatures` in notification-service
+ * but indexed by orgId (used by team-level features like invite email).
+ */
+export async function getOrgFeatures(
+  d1: D1Database,
+  orgId: string
+): Promise<{ emailNotifications: boolean }> {
+  const db = createDb(d1);
+  const rows = await db
+    .select({
+      emailNotifications: organizations.featuresEmailNotifications,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+  return {
+    emailNotifications: rows[0]?.emailNotifications ?? false,
+  };
 }
 
 export async function updateOrganizationDisplayName(

@@ -9,6 +9,7 @@ import {
   getActiveOrgId,
   getDashboardUserId,
 } from "@/lib/dashboard-user";
+import { loadShellSidebar } from "@/lib/shell-data";
 import {
   ButtonPrimary,
   Card,
@@ -28,10 +29,16 @@ export default createRoute(async (c) => {
   }
   const orgs = await listOrganizationsForProjectCreation(c.env.DB_CONTROL, uid);
   const activeOrgId = getActiveOrgId(c);
+  const sidebar = await loadShellSidebar(c, uid);
 
   if (orgs.length === 0) {
     return c.render(
-      <Shell title="New project" auth="signed-in">
+      <Shell
+        currentPath={c.req.path}
+        title="New project"
+        auth="signed-in"
+        {...sidebar}
+      >
         <PageHeader
           title="プロジェクトを作成"
           description="プロジェクトを作るには、まずチームが必要です。"
@@ -52,7 +59,12 @@ export default createRoute(async (c) => {
   }
 
   return c.render(
-    <Shell title="New project" auth="signed-in">
+    <Shell
+      currentPath={c.req.path}
+      title="New project"
+      auth="signed-in"
+      {...sidebar}
+    >
       <PageHeader
         title="New project"
         description="チームを選びプロジェクトを作成します。DSN の公開鍵は作成直後の画面でのみ表示されるため、必ずその場でコピーしてください。"
@@ -89,8 +101,8 @@ export default createRoute(async (c) => {
             placeholder="my-app-prod"
           />
           <p className="text-xs leading-relaxed text-kumo-subtle">
-            ID は英字または <code className="font-mono">_</code> で始めるか、数字のみにしてください。
-            先頭が「数字＋英字」の組み合わせは一部の SDK で短縮される場合があります。
+            英数字・<code className="font-mono">_</code>・<code className="font-mono">-</code>・
+            <code className="font-mono">.</code> が使えます（2〜64 文字）。
           </p>
           <div className="pt-2">
             <ButtonPrimary type="submit">Create project &amp; API key</ButtonPrimary>
@@ -114,6 +126,7 @@ export const POST = createRoute(async (c) => {
     ? String(body.projectId).trim()
     : undefined;
 
+  const sidebar = await loadShellSidebar(c, uid);
   try {
     const result = await createProjectWithApiKey(c.env.DB_CONTROL, c.env, {
       orgId,
@@ -123,10 +136,15 @@ export const POST = createRoute(async (c) => {
     });
 
     const ingestUrl = new URL(ingestPublicOrigin(c.env));
-    const dsn = `${ingestUrl.protocol}//${result.plainKey}@${ingestUrl.host}/${result.projectId}`;
+    const dsn = `${ingestUrl.protocol}//${result.plainKey}@${ingestUrl.host}/${result.externalId}`;
 
     return c.render(
-      <Shell title="Save your DSN" auth="signed-in">
+      <Shell
+        currentPath={c.req.path}
+        title="Save your DSN"
+        auth="signed-in"
+        {...sidebar}
+      >
         <PageHeader
           title="すぐにコピーしてください"
           description={
@@ -164,9 +182,14 @@ export const POST = createRoute(async (c) => {
           </Card>
 
           <div className="flex flex-wrap items-center gap-4 pt-2">
-            <LinkPrimary href={`/p/${result.projectId}`}>
-              Open project →
+            <LinkPrimary
+              href={`/p/${result.projectId}/setup?key=${encodeURIComponent(result.plainKey)}`}
+            >
+              SDK セットアップへ →
             </LinkPrimary>
+            <TextLink href={`/p/${result.projectId}`}>
+              Open project
+            </TextLink>
             <TextLink href="/">All projects</TextLink>
           </div>
         </div>
@@ -176,7 +199,12 @@ export const POST = createRoute(async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "作成に失敗しました";
     return c.render(
-      <Shell title="Error" auth="signed-in">
+      <Shell
+        currentPath={c.req.path}
+        title="Error"
+        auth="signed-in"
+        {...sidebar}
+      >
         <Card className="p-8">
           <p className="text-sm text-rose-400">{message}</p>
           <div className="mt-6">

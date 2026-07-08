@@ -1,14 +1,19 @@
 {
-  "name": "@wana/cli",
+  "name": "@wanahq/cli",
   "version": "0.1.0",
-  "private": true,
+  "description": "Wana — Cloudflare-native crash reporting. CLI for uploading dSYMs and managing your projects.",
+  "license": "MIT",
   "type": "module",
   "bin": {
-    "wana": "./dist/index.js"
+    "wana": "dist/index.js"
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

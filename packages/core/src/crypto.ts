@@ -18,6 +18,18 @@ export function generateSentryPublicKey(): string {
   return `wana${randomHex(24)}`;
 }
 
+/**
+ * Random 9-digit numeric id (100000000–999999999), for the DSN-compatible
+ * `projects.external_id` surrogate — @sentry/core's DSN validator requires
+ * the DSN's trailing path segment to be entirely digits (see external_id's
+ * doc comment in packages/schema/src/control-plane.ts).
+ */
+export function generateNumericExternalId(): number {
+  const bytes = new Uint32Array(1);
+  crypto.getRandomValues(bytes);
+  return 100_000_000 + (bytes[0] % 900_000_000);
+}
+
 export function apiKeyHint(publicKey: string): string {
   return `…${publicKey.slice(-6)}`;
 }

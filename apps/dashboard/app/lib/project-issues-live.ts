@@ -3,15 +3,30 @@
 export function projectIssuesLiveScript(
   projectId: string,
   streamQuery: string,
-  search = ""
+  search = "",
+  /**
+   * Project member labels for the assignee chip. Bake the userId → display
+   * name map into the script so the WS-driven re-render keeps showing
+   * "[user] Alice" instead of dropping the chip on the first live update.
+   * Keep the map small — only members who can actually appear as
+   * assignees in the stream we just SSR'd.
+   */
+  assigneeMembers: { userId: string; name: string; email: string }[] = []
 ): string {
   const id = JSON.stringify(projectId);
   const query = JSON.stringify(streamQuery);
   const searchJson = JSON.stringify(search.toLowerCase());
+  const membersJson = JSON.stringify(
+    assigneeMembers.reduce<Record<string, string>>((acc, m) => {
+      acc[m.userId] = m.name || m.email || m.userId.slice(0, 8);
+      return acc;
+    }, {})
+  );
   return `(function () {
   var projectId = ${id};
   var streamQuery = ${query};
   var searchTerm = ${searchJson};
+  var assigneeLabels = ${membersJson};
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
   var wsUrl = proto + "//" + location.host + "/p/" + encodeURIComponent(projectId) + "/ws";
   var badgeClass = {
@@ -173,6 +188,19 @@ export function projectIssuesLiveScript(
         var bc = statusBadgeClass(row.status);
         var cul = row.culprit != null && row.culprit !== "" ? row.culprit : "—";
         var seen = relTime(rowLastSeenMs(row));
+        // Assignee chip — included by SSR; bake into the WS-driven
+        // re-render too, otherwise the chip flashes on first live update.
+        var assigneeHtml = "";
+        if (row.assigneeUserId) {
+          var label =
+            assigneeLabels[row.assigneeUserId] ||
+            String(row.assigneeUserId).slice(0, 8);
+          assigneeHtml =
+            '<span class="text-kumo-subtle" aria-hidden="true">·</span>' +
+            '<span class="inline-flex items-center gap-1 rounded-md bg-kumo-base px-1.5 py-0.5 text-[10px] font-medium text-kumo-default ring-1 ring-amber-500/30"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' +
+            esc(label) +
+            '</span>';
+        }
         return (
           '<a class="group grid gap-3 px-5 py-4 transition-colors hover:bg-kumo-base sm:grid-cols-[minmax(0,1fr)_7rem_5rem_6.5rem] sm:items-center sm:gap-0" href="/p/' +
           esc(projectId) +
@@ -189,7 +217,9 @@ export function projectIssuesLiveScript(
           '</span><span class="text-kumo-subtle" aria-hidden="true">|</span>' +
           '<span class="truncate font-mono text-[11px] text-kumo-subtle">' +
           esc(cul) +
-          "</span></p></div>" +
+          "</span>" +
+          assigneeHtml +
+          "</p></div>" +
           '<div class="text-left text-xs tabular-nums text-kumo-subtle sm:text-right">' +
           '<span class="text-kumo-subtle sm:hidden">Last seen: </span>' +
           esc(seen) +

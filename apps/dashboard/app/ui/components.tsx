@@ -183,8 +183,9 @@ export function issueStatusVariant(status: string): BadgeVariant {
 }
 
 /**
- * Issue 詳細用ステータス切替。segmented-tab スタイル：選択中タブは下線＋
- * 強い文字色、他は淡色 + hover、クリックで POST 送信（SSR 安全）。
+ * Issue 詳細用ステータス切替 — segmented-pill コントロール。3 つのピル
+ * を 1 つのプレート（`bg-kumo-recessed`）の中に入れ、選択中だけ濃い背景 +
+ * リング、それ以外は透過 + hover。アクションごとに独立した form で POST。
  */
 export function IssueStatusToolbar(props: {
   action: string;
@@ -195,63 +196,70 @@ export function IssueStatusToolbar(props: {
   type Opt = {
     value: IssueStatus;
     label: string;
-    /** Underline + label color when this tab is the active status. */
-    activeAccent: string;
+    /** Active background + ring when this option is the current status. */
+    activeBg: string;
+    activeRing: string;
+    activeText: string;
   };
 
   const opts: Opt[] = [
     {
       value: "unresolved",
       label: "Unresolved",
-      activeAccent: "border-amber-500 text-kumo-default",
+      activeBg: "bg-amber-500/15",
+      activeRing: "ring-amber-500/40",
+      activeText: "text-amber-600 dark:text-amber-300",
     },
     {
       value: "resolved",
       label: "Resolved",
-      activeAccent: "border-emerald-500 text-emerald-400",
+      activeBg: "bg-emerald-500/15",
+      activeRing: "ring-emerald-500/40",
+      activeText: "text-emerald-600 dark:text-emerald-300",
     },
     {
       value: "ignored",
       label: "Ignored",
-      activeAccent: "border-rose-500 text-rose-300",
+      activeBg: "bg-rose-500/15",
+      activeRing: "ring-rose-500/40",
+      activeText: "text-rose-600 dark:text-rose-300",
     },
   ];
 
   return (
-    <nav
-      role="tablist"
+    <div
+      role="group"
       aria-label="Issue status"
-      className="-mx-1 flex w-full flex-wrap gap-x-1 gap-y-0 overflow-x-auto border-b border-kumo-hairline"
+      className="inline-flex w-full rounded-lg bg-kumo-recessed p-0.5 ring-1 ring-kumo-hairline sm:w-auto"
     >
       {opts.map((o) => {
         const isCurrent = status === o.value;
         const base =
-          "inline-flex items-center whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-default";
+          "inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-default";
         const cls = isCurrent
-          ? `${base} ${o.activeAccent}`
-          : `${base} border-transparent text-kumo-subtle hover:border-kumo-line hover:text-kumo-default`;
+          ? `${base} ${o.activeBg} ${o.activeText} ring-1 ${o.activeRing}`
+          : `${base} text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default`;
         return (
           <form
             method="post"
             action={action}
             key={o.value}
             role="presentation"
-            className="contents"
+            className="flex-1"
           >
             <input type="hidden" name="status" value={o.value} />
             <button
               type="submit"
-              role="tab"
-              aria-selected={isCurrent}
+              aria-pressed={isCurrent}
               disabled={isCurrent}
-              className={cls}
+              className={`${cls} w-full`}
             >
               {o.label}
             </button>
           </form>
         );
       })}
-    </nav>
+    </div>
   );
 }
 

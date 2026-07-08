@@ -57,7 +57,11 @@
 	"send_email": [
 		{ "name": "SEND_MAIL" }
 	],
-	// Queue consumer for processing errors
+	// Queue consumers — main + DLQ.
+	// Audit BUG-3: previously the DLQ had no consumer wired up, so poison
+	// messages accumulated forever and the R2 payloads written before the
+	// failed DO call were never cleaned up. The DLQ consumer below deletes
+	// the R2 object and logs once.
 	"queues": {
 		"consumers": [
 			{
@@ -69,23 +73,54 @@
 				//   wrangler queues create wana-error-dlq
 				"max_retries": 5,
 				"dead_letter_queue": "wana-error-dlq"
+			},
+			{
+				"queue": "wana-error-dlq",
+				"max_batch_size": 20,
+				"max_batch_timeout": 30,
+				// One pass only — if R2 cleanup itself fails we ack anyway so
+				// the message doesn't bounce forever; we just log.
+				"max_retries": 0
 			}
 		]
 	},
-	// Durable Objects for per-project data storage
+	// Durable Objects for per-project data storage. Containers are also
+	// DOs under the hood, so the Symbolicator goes here too.
 	"durable_objects": {
 		"bindings": [
 			{
 				"name": "PROJECT_DO",
 				"class_name": "ProjectDataStore"
+			},
+			{
+				"name": "SYMBOLICATOR",
+				"class_name": "Symbolicator"
 			}
 		]
 	},
+	// Workers Containers: a Linux container that wraps `llvm-symbolizer`
+	// for dSYM-based stack-trace resolution. `basic` instance is enough
+	// for typical mobile dSYMs (the largest we see in practice are a few
+	// hundred MB and fit comfortably under the 4 GB ephemeral disk).
+	"containers": [
+		{
+			"class_name": "Symbolicator",
+			"image": "../symbolicator/Dockerfile",
+			"instance_type": "basic",
+			"max_instances": 5
+		}
+	],
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": [
 				"ProjectDataStore"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"Symbolicator"
 			]
 		}
 	]

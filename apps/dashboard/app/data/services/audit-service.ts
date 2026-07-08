@@ -15,6 +15,7 @@ export type AuditAction =
   | "invite.revoke"
   | "project.create"
   | "project.delete"
+  | "project.quota.update"
   | "apikey.issue"
   | "apikey.revoke"
   | "apikey.restore"

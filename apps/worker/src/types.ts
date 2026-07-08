@@ -19,6 +19,19 @@ export interface Env {
   };
   /** From: address used by SEND_MAIL (must be on a verified domain). */
   MAIL_FROM?: string;
+  /**
+   * Shared secret authenticating internal RPC traffic from the dashboard
+   * (e.g. the invite email send-mail endpoint). Same value set on both
+   * wana-worker and wana-dashboard via `wrangler secret put`.
+   */
+  INTERNAL_RPC_SECRET?: string;
+  /**
+   * Workers Container running llvm-symbolizer for dSYM-based symbolication.
+   * Bound here, exposed to the dashboard via a fetch RPC endpoint so the
+   * dashboard doesn't need its own container binding.
+   */
+  SYMBOLICATOR: DurableObjectNamespace<Symbolicator>;
 }
 
 import type { ProjectDataStore } from "./do/ProjectDataStore";
+import type { Symbolicator } from "./do/Symbolicator";

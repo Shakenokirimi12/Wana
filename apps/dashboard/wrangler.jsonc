@@ -53,14 +53,20 @@
         "name": "PROJECT_DO",
         "class_name": "ProjectDataStore",
         "script_name": "wana-worker"
+      },
+      {
+        "name": "SYMBOLICATOR",
+        "class_name": "Symbolicator",
+        "script_name": "wana-worker"
       }
     ]
   },
   // NOTE: Cloudflare Pages configuration does not accept `send_email` —
-  // only standalone Workers can bind SEND_MAIL. The wana-worker handles
-  // email delivery for issue.created events; the dashboard's "テスト送信"
-  // for email-kind endpoints reports "configured at worker" without
-  // actually exercising SEND_MAIL from here.
-  // Optional: deploy `plugins/webauthn-worker` as `wana-webauthn-plugin` and uncomment:
-  // "services": [{ "binding": "AUTH_PLUGIN", "service": "wana-webauthn-plugin" }]
+  // only standalone Workers can bind SEND_MAIL. Mail traffic from the
+  // dashboard (e.g. invite emails) goes through the MAIL_SERVICE binding,
+  // which fetches /__internal/send-mail on wana-worker (authenticated by
+  // a shared INTERNAL_RPC_SECRET secret on both sides).
+  "services": [
+    { "binding": "MAIL_SERVICE", "service": "wana-worker" }
+  ]
 }

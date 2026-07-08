@@ -55,12 +55,36 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
     } catch {
       return c.json({ error: "invalid_json" }, 400);
     }
-    const email = typeof body.email === "string" ? body.email : "";
+    const email =
+      typeof body.email === "string" ? body.email.trim() : "";
+    const rpID = webauthnRpId(c.req.url, c.env);
+
+    // Email-less / discoverable-credential flow. The browser shows every
+    // passkey registered for this RP; we resolve the user from the chosen
+    // credential at verify-time. No user lookup here means we also have no
+    // enumeration oracle — a malformed request and a legit request take
+    // the same code path.
+    if (!email) {
+      const options = await generateAuthenticationOptions({
+        rpID,
+        timeout: 60000,
+        // Empty allow-list = "use any discoverable credential for this RP."
+        allowCredentials: [],
+        userVerification: "required",
+      });
+      const challengeKey = crypto.randomUUID();
+      await putWebAuthnChallenge(c.env.SYSTEM_CONFIG, challengeKey, {
+        kind: "authentication",
+        challenge: options.challenge,
+        // No userId — verify will pull it from the credential row.
+      });
+      return c.json({ optionsJSON: options, challengeKey });
+    }
+
+    // Legacy email-keyed flow. Kept for backwards compatibility (older
+    // browsers without discoverable-credential support, or accounts whose
+    // first passkey was registered before resident keys were on).
     const user = await getUserByEmail(c.env.DB_CONTROL, email);
-    // Anti-enumeration: "no such account" and "account without a passkey" return
-    // an IDENTICAL response so a caller can't probe which emails are registered.
-    // Always do the credential lookup (even for a missing user, against a throwaway
-    // id) so the two paths take a similar amount of work.
     const credIds = user
       ? await listWebAuthnCredentialIdsForUser(c.env.DB_CONTROL, user.id)
       : [];
@@ -74,7 +98,6 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         400
       );
     }
-    const rpID = webauthnRpId(c.req.url, c.env);
     const options = await generateAuthenticationOptions({
       rpID,
       timeout: 60000,
@@ -82,8 +105,6 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
         id,
         type: "public-key" as const,
       })),
-      // Require user verification (PIN/biometric), not just presence, so a
-      // stolen-but-locked authenticator cannot be used.
       userVerification: "required",
     });
     const challengeKey = crypto.randomUUID();
@@ -121,7 +142,13 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       c.env.DB_CONTROL,
       credential.id
     );
-    if (!row || row.userId !== stored.userId) {
+    if (!row) {
+      return c.json({ error: "credential_mismatch" }, 401);
+    }
+    // Email-keyed flow: the server already picked which user we expect.
+    // Discoverable flow: stored.userId is absent — accept whatever user the
+    // credential row points at.
+    if (stored.userId && row.userId !== stored.userId) {
       return c.json({ error: "credential_mismatch" }, 401);
     }
 
@@ -148,7 +175,7 @@ export function createAuthPluginApp(): Hono<{ Bindings: AuthPluginEnv }> {
       verification.authenticationInfo.newCounter
     );
 
-    await createDashboardSession(c, stored.userId);
+    await createDashboardSession(c, row.userId);
     return c.json({ ok: true, next: safeNext(body.next) });
   });
 

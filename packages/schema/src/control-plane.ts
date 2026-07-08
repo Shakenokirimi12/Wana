@@ -42,7 +42,30 @@ export const projects = sqliteTable("projects", {
     .references(() => organizations.id),
   name: text("name").notNull(),
   doId: text("do_id").notNull(),
+  /**
+   * Random numeric surrogate id used ONLY in the DSN / ingest URL.
+   * `@sentry/core`'s validateDsn() rejects any DSN whose trailing path
+   * segment is not entirely digits unless the consumer's bundler defines
+   * `__SENTRY_DEBUG__: false` (most apps don't) — so `projects.id` (a
+   * free-form slug) can't be embedded in the DSN directly. Not `.notNull()`
+   * at the DB level: SQLite/D1 can't retroactively add a NOT NULL
+   * constraint via ALTER TABLE, so existing rows are backfilled by the
+   * migration instead — application code always sets it on insert.
+   */
+  externalId: integer("external_id").unique(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  /**
+   * Retention window in days for this project. Defaults to 30. The DO's
+   * retention alarm queries this — if absent, falls back to a 30-day SYSTEM_CONFIG
+   * override. Min 1, max 365 (enforced at the route layer).
+   */
+  retentionDays: integer("retention_days").notNull().default(30),
+  /**
+   * Optional monthly event-count quota. Null = unlimited. When the running
+   * 30-day count reaches this, the ingest worker can reject envelopes
+   * (P2: not wired yet — column is here so the UI can collect the value).
+   */
+  maxEventsPerMonth: integer("max_events_per_month"),
 });
 
 export const apiKeys = sqliteTable(

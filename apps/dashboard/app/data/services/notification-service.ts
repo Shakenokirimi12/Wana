@@ -59,6 +59,81 @@ export async function getProjectFeatures(
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Slack Incoming Webhook URLs have a fixed shape:
+ *   https://hooks.slack.com/services/T.../B.../<token>
+ * We constrain to that host so users can't paste a webhook URL meant for the
+ * generic Wana webhook channel here (which would skip HMAC signing).
+ */
+/**
+ * Discord Webhook URLs are bound to a specific channel at creation time —
+ * the payload cannot override channel_id on execute. The shape is:
+ *   https://discord.com/api/webhooks/<id>/<token>
+ *   https://discord.com/api/v10/webhooks/<id>/<token>   (versioned, also valid)
+ *   canary.discord.com / ptb.discord.com / discordapp.com (legacy)
+ * id is a snowflake (15–25 digits), token is URL-safe base64 (typically 60+).
+ */
+function validateDiscordWebhookUrl(raw: string): void {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error("Discord Webhook URL の形式が不正です");
+  }
+  if (u.protocol !== "https:") {
+    throw new Error("Discord Webhook URL は https:// で始めてください");
+  }
+  const allowedHosts = new Set([
+    "discord.com",
+    "discordapp.com",
+    "canary.discord.com",
+    "ptb.discord.com",
+  ]);
+  if (!allowedHosts.has(u.host)) {
+    throw new Error(
+      "Discord Webhook URL は discord.com 系の URL である必要があります"
+    );
+  }
+  if (
+    !/^\/api(?:\/v\d{1,2})?\/webhooks\/\d{15,25}\/[A-Za-z0-9_-]{50,}$/.test(
+      u.pathname
+    )
+  ) {
+    throw new Error(
+      "Discord Webhook URL の形式が不正です（/api/[v10/]webhooks/<id>/<token>）"
+    );
+  }
+}
+
+/** Discord snowflake (numeric, 15–25 digits). Used for thread_id targeting. */
+function validateDiscordThreadId(raw: string): void {
+  if (!/^\d{15,25}$/.test(raw)) {
+    throw new Error("スレッド ID は Discord snowflake（数字のみ）で指定してください");
+  }
+}
+
+function validateSlackWebhookUrl(raw: string): void {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error("Slack Webhook URL の形式が不正です");
+  }
+  if (u.protocol !== "https:") {
+    throw new Error("Slack Webhook URL は https:// で始めてください");
+  }
+  if (u.host !== "hooks.slack.com") {
+    throw new Error(
+      "Slack Webhook URL は hooks.slack.com を指してください"
+    );
+  }
+  if (!u.pathname.startsWith("/services/")) {
+    throw new Error(
+      "Slack Incoming Webhook URL を貼り付けてください（/services/... 形式）"
+    );
+  }
+}
+
 // ── Endpoint CRUD ───────────────────────────────────────────────────────────
 
 export async function listEndpoints(d1: D1Database, projectId: string) {
@@ -72,6 +147,7 @@ export async function listEndpoints(d1: D1Database, projectId: string) {
       secretHint: notificationEndpoints.secretHint,
       isActive: notificationEndpoints.isActive,
       consecutiveFailures: notificationEndpoints.consecutiveFailures,
+      configJson: notificationEndpoints.configJson,
       createdAt: notificationEndpoints.createdAt,
     })
     .from(notificationEndpoints)
@@ -86,8 +162,10 @@ export async function createEndpoint(
     projectId: string;
     actingUserId: string;
     name: string;
-    kind?: "webhook" | "email";
+    kind?: "webhook" | "email" | "slack" | "discord";
     target: string;
+    /** Channel-specific config (e.g. Discord thread_id) — stored as JSON. */
+    config?: Record<string, unknown> | null;
   }
 ): Promise<{ id: string; plainSecret: string | null }> {
   const { orgId } = await requireProjectAdmin(d1, input.actingUserId, input.projectId);
@@ -116,6 +194,19 @@ export async function createEndpoint(
     if (!EMAIL_RE.test(target)) {
       throw new Error("メールアドレスの形式が不正です");
     }
+  } else if (kind === "slack") {
+    // Slack Incoming Webhook URLs are themselves the bearer credential, so
+    // we don't generate a separate HMAC secret. The DB schema still requires
+    // non-null TEXT columns, hence the empty-string sealed value.
+    validateSlackWebhookUrl(target);
+  } else if (kind === "discord") {
+    // Same model as Slack — URL is the bearer; no HMAC. Validate the
+    // optional thread_id config here so a malformed value never reaches
+    // the DB.
+    validateDiscordWebhookUrl(target);
+    if (input.config && typeof input.config.threadId === "string") {
+      validateDiscordThreadId(input.config.threadId);
+    }
   } else {
     throw new Error("不明な配信先タイプです");
   }
@@ -133,7 +224,7 @@ export async function createEndpoint(
     secretNonce: sealed.secretNonce,
     secretHint: sealed.secretHint,
     kekVersion: sealed.kekVersion,
-    configJson: null,
+    configJson: input.config ? JSON.stringify(input.config) : null,
     isActive: true,
     consecutiveFailures: 0,
     createdAt: new Date(now),
@@ -186,6 +277,10 @@ export async function updateEndpoint(
       if (!EMAIL_RE.test(target)) {
         throw new Error("メールアドレスの形式が不正です");
       }
+    } else if (cur[0].kind === "slack") {
+      validateSlackWebhookUrl(target);
+    } else if (cur[0].kind === "discord") {
+      validateDiscordWebhookUrl(target);
     } else {
       validateWebhookUrl(target);
     }
@@ -280,6 +375,9 @@ export async function listRules(d1: D1Database, projectId: string) {
       endpointId: notificationRules.endpointId,
       endpointName: notificationEndpoints.name,
       onIssueCreated: notificationRules.onIssueCreated,
+      onIssueResolved: notificationRules.onIssueResolved,
+      onIssueRegressed: notificationRules.onIssueRegressed,
+      onSpike: notificationRules.onSpike,
       filterQuery: notificationRules.filterQuery,
       minIntervalSeconds: notificationRules.minIntervalSeconds,
       lastFiredAt: notificationRules.lastFiredAt,
@@ -302,6 +400,9 @@ export async function createRule(
     name: string;
     endpointId: string;
     onIssueCreated: boolean;
+    onIssueResolved?: boolean;
+    onIssueRegressed?: boolean;
+    onSpike?: boolean;
     filterQuery?: string;
     minIntervalSeconds?: number;
   }
@@ -309,7 +410,12 @@ export async function createRule(
   const { orgId } = await requireProjectAdmin(d1, input.actingUserId, input.projectId);
   const name = input.name.trim();
   if (!name) throw new Error("名前を入力してください");
-  if (!input.onIssueCreated) {
+  if (
+    !input.onIssueCreated &&
+    !input.onIssueResolved &&
+    !input.onIssueRegressed &&
+    !input.onSpike
+  ) {
     throw new Error("トリガを少なくとも1つ選んでください");
   }
   const db = createDb(d1);
@@ -333,9 +439,9 @@ export async function createRule(
     endpointId: input.endpointId,
     name,
     onIssueCreated: input.onIssueCreated,
-    onIssueResolved: false,
-    onIssueRegressed: false,
-    onSpike: false,
+    onIssueResolved: input.onIssueResolved ?? false,
+    onIssueRegressed: input.onIssueRegressed ?? false,
+    onSpike: input.onSpike ?? false,
     filterQuery: input.filterQuery?.trim() || null,
     minIntervalSeconds: minInterval,
     isActive: true,

@@ -2,6 +2,7 @@ import { createRoute } from "honox/factory";
 
 import { createOrganization } from "@/data/control-plane";
 import { getDashboardUserId } from "@/lib/dashboard-user";
+import { loadShellSidebar } from "@/lib/shell-data";
 import { ButtonPrimary, Card, InputField, PageHeader, TextLink } from "@/ui/components";
 import { Shell } from "@/ui/shell";
 
@@ -13,12 +14,14 @@ export default createRoute(async (c) => {
   if (!uid) {
     return c.redirect("/login");
   }
+  const sidebar = await loadShellSidebar(c, uid);
 
   return c.render(
     <Shell
+      currentPath={c.req.path}
       title="Create team"
-
       auth="signed-in"
+      {...sidebar}
     >
       <PageHeader
         title="チームを作成"
@@ -78,8 +81,14 @@ export const POST = createRoute(async (c) => {
     return c.redirect(`/?ok=1&team=${encodeURIComponent(result.slug)}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : "作成に失敗しました";
+    const sidebar = await loadShellSidebar(c, uid);
     return c.render(
-      <Shell title="Error" auth="signed-in">
+      <Shell
+        currentPath={c.req.path}
+        title="Error"
+        auth="signed-in"
+        {...sidebar}
+      >
         <PageHeader title="エラー" description="チームの作成中に問題が発生しました。" />
         <Card className="p-8">
           <p className="text-sm text-rose-400 font-medium">{message}</p>

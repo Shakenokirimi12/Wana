@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./project-store": "./src/do/ProjectDataStore.ts"
+    "./project-store": "./src/do/ProjectDataStore.ts",
+    "./symbolicator": "./src/do/Symbolicator.ts"
   },
   "scripts": {
     "dev": "wrangler dev --port 8788",
@@ -15,9 +16,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "@wana/core": "workspace:*",
     "@wana/schema": "workspace:*",
     "@wana/types": "workspace:*",
-    "@wana/core": "workspace:*",
     "drizzle-orm": "^0.44.0",
     "hono": "^4.12.16"
   },

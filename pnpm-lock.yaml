@@ -8,7 +8,7 @@ importers:
 
   .:
     devDependencies:
-      '@wana/cli':
+      '@wanahq/cli':
         specifier: workspace:*
         version: link:packages/cli
       turbo:
@@ -155,6 +155,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@cloudflare/containers':
+        specifier: ^0.3.7
+        version: 0.3.7
       '@wana/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -331,6 +334,9 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@cloudflare/containers@0.3.7':
+    resolution: {integrity: sha512-DM9dm3FnIBSyiSJ1FLavKwl/lk3oAmTaynCzZQ9pZR0ncRPquSxkxd8Nu2MFILxmDDsPkxKsSNEh9mHHMty4Fw==}
 
   '@cloudflare/kumo@2.5.2':
     resolution: {integrity: sha512-HUNi40VG3ExJ7lV8HjqPQcGpCmm2CqG/SzjJ+K+NhCwZRYTBvagdoMDPX2XZ8AW/ZPEeuFoId0VYmzrX+luyXQ==}
@@ -2801,6 +2807,8 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.5)
     optionalDependencies:
       '@types/react': 19.2.14
+
+  '@cloudflare/containers@0.3.7': {}
 
   '@cloudflare/kumo@2.5.2(@date-fns/tz@1.5.0)(@phosphor-icons/react@2.1.10(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/react@19.2.14)(date-fns@4.4.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
     dependencies:

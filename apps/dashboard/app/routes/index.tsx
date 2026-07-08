@@ -8,14 +8,22 @@ import {
 import {
   getActiveOrgId,
   getDashboardUserId,
+  isOpenSignupEnabled,
 } from "@/lib/dashboard-user";
 import { Badge, Card, LinkPrimary, PageHeader } from "@/ui/components";
+import { LandingPage } from "@/ui/landing";
 import { Shell } from "@/ui/shell";
 
 export default createRoute(async (c) => {
   const userId = getDashboardUserId(c);
   if (!userId) {
-    return c.redirect("/login");
+    return c.render(
+      <LandingPage
+        showSignup={isOpenSignupEnabled(c.env)}
+        currentPath={c.req.path}
+      />,
+      { title: "Wana — Cloudflare-native crash reporting" }
+    );
   }
 
   const activeOrgId = getActiveOrgId(c);
@@ -37,52 +45,28 @@ export default createRoute(async (c) => {
 
   return c.render(
     <Shell
+      currentPath={c.req.path}
       title="Projects"
-
       activeTeamName={activeTeam?.name}
+      activeTeamSlug={activeTeam?.slug}
       teamSwitcher={teams.map((t) => ({
         id: t.id,
         name: t.name,
         slug: t.slug,
       }))}
+      projects={rows.map((p) => ({ id: p.id, name: p.name }))}
       auth="signed-in"
     >
       {qOk === "1" ? (
         <div className="mb-6 rounded-lg border border-emerald-500/25 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
-          チームに参加しました。アクティブチームを切り替えた場合はヘッダの Team から選択してください。
+          チームに参加しました。アクティブチームを切り替えるにはサイドバーから選択してください。
         </div>
       ) : null}
 
       <PageHeader
         title="Projects"
-        description={
-          <>
-            アクティブチーム{" "}
-            {activeTeam ? (
-              <>
-                <span className="font-medium text-kumo-default">{activeTeam.name}</span>
-                <span className="ml-2 inline-flex items-center gap-2">
-                  <Badge variant="zinc">{activeTeam.slug}</Badge>
-                </span>
-              </>
-            ) : (
-              <span className="text-kumo-subtle">（未選択）</span>
-            )}
-          </>
-        }
-        actions={
-          <>
-            <LinkPrimary href="/projects/new">New project</LinkPrimary>
-            {activeTeam ? (
-              <a
-                className="rounded-lg border border-kumo-hairline bg-kumo-recessed px-4 py-2 text-sm font-medium text-kumo-default hover:border-kumo-line hover:bg-kumo-base"
-                href={`/settings/team/${encodeURIComponent(activeTeam.slug)}`}
-              >
-                Team settings
-              </a>
-            ) : null}
-          </>
-        }
+        description="アクティブチームのプロジェクト一覧。チーム切替・設定はサイドバー下部から。"
+        actions={<LinkPrimary href="/projects/new">New project</LinkPrimary>}
       />
 
       <Card className="overflow-hidden">

@@ -40,8 +40,8 @@ VALUES ('${orgId}', 'test-org', 'Test Organization');
 INSERT OR REPLACE INTO organization_members (id, org_id, user_id, role)
 VALUES ('member_01', '${orgId}', '${userId}', 'owner');
 
-INSERT INTO projects (id, org_id, name, do_id, created_at)
-VALUES ('${projectId}', '${orgId}', 'Wana test project', '${doId}', ${now});
+INSERT INTO projects (id, org_id, name, do_id, external_id, created_at)
+VALUES ('${projectId}', '${orgId}', 'Wana test project', '${doId}', 100000001, ${now});
 
 INSERT INTO api_keys (id, project_id, key_hash, hint, is_active, created_at)
 VALUES ('key_01', '${projectId}', '${keyHash}', 'wana_test_...c123', 1, ${now});

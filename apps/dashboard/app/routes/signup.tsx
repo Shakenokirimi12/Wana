@@ -5,11 +5,16 @@ import {
   getDashboardUserId,
   isOpenSignupEnabled,
 } from "@/lib/dashboard-user";
-import { Card, PageHeader, TextLink } from "@/ui/components";
+import { getPendingInviteCookie } from "@/lib/pending-invite";
+import { Card, TextLink } from "@/ui/components";
+import { WanaMark } from "@/ui/icons";
 import { Shell } from "@/ui/shell";
 
 export default createRoute(async (c) => {
-  const token = c.req.query("invite")?.trim() ?? "";
+  // Prefer ?invite= but fall back to the persisted invite cookie so a user
+  // who navigates directly to /signup still lands on the right team flow.
+  const token =
+    c.req.query("invite")?.trim() || getPendingInviteCookie(c) || "";
   const uid = getDashboardUserId(c);
 
   let details: Awaited<ReturnType<typeof getInviteDetailsForAccept>> = null;
@@ -86,12 +91,28 @@ export default createRoute(async (c) => {
       : "招待を受け取り、パスキーでアカウントを作成します。既にアカウントがある場合はログインしてください。";
 
   return c.render(
-    <Shell title={isFirstUser ? "管理者登録" : "アカウント作成"} auth="signed-out">
-      <PageHeader title={headerTitle} description={headerDesc} />
-      <Card className="max-w-lg space-y-4 p-6 sm:p-8">
+    <Shell
+      currentPath={c.req.path}
+      title={isFirstUser ? "管理者登録" : "アカウント作成"}
+      auth="hidden"
+    >
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md flex-col justify-center">
+      <div className="mb-8 flex flex-col items-center gap-3">
+        <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-zinc-900 shadow-lg shadow-amber-500/15">
+          <WanaMark size={40} />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-kumo-default">
+          {headerTitle}
+        </h1>
+        <p className="max-w-sm text-center text-sm text-kumo-subtle">
+          {headerDesc}
+        </p>
+      </div>
+
+      <Card className="p-8 sm:p-10">
         <div
           id="signup-invite-root"
-          className="space-y-4"
+          className="space-y-5"
           data-token={effectiveToken}
           data-email-locked={emailLocked ? "true" : "false"}
           data-email={emailLocked ? lockedEmail : ""}
@@ -122,24 +143,26 @@ export default createRoute(async (c) => {
           )}
           <p
             data-signup-status
-            className="min-h-[1.25rem] text-sm text-rose-400"
+            className="min-h-[1.25rem] text-center text-sm text-rose-400"
           />
           <button
             type="button"
             data-action="signup-passkey"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-amber-500 px-4 text-sm font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-md)] bg-amber-500 px-4 text-sm font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50"
           >
             パスキーでアカウントを作成
           </button>
         </div>
         <script type="module" src="/static/signup-invite.js" />
-
-        <div className="border-t border-kumo-hairline pt-4 text-sm text-kumo-subtle">
-          <TextLink href={`/login?next=${encodeURIComponent(nextPath)}`}>
-            既にアカウントをお持ちの方はログイン
-          </TextLink>
-        </div>
       </Card>
+
+      <p className="mt-6 text-center text-sm text-kumo-subtle">
+        既にアカウントをお持ちの方は{" "}
+        <TextLink href={`/login?next=${encodeURIComponent(nextPath)}`}>
+          ログイン
+        </TextLink>
+      </p>
+      </div>
     </Shell>,
     { title: "アカウント作成 — Wana" }
   );

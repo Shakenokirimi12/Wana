@@ -9,6 +9,10 @@ import {
   getDashboardUserId,
 } from "@/lib/dashboard-user";
 import {
+  clearPendingInviteCookie,
+  setPendingInviteCookie,
+} from "@/lib/pending-invite";
+import {
   ButtonPrimary,
   Card,
   LinkOutline,
@@ -25,12 +29,20 @@ export default createRoute(async (c) => {
 
   const details = await getInviteDetailsForAccept(c.env.DB_CONTROL, raw);
 
+  // Persist the invite token for the visitor's session. If they navigate
+  // away to /login or /signup without the next= param, we'll still bring
+  // them back to this page once auth completes. Only when valid + signed
+  // out — there's nothing to remember for signed-in users.
+  if (details && !uid) {
+    setPendingInviteCookie(c, raw);
+  }
+
   if (!details) {
     const loginNext = `/invite/${encodeURIComponent(raw)}`;
     return c.render(
       <Shell
+        currentPath={c.req.path}
         title="Invitation"
-
         auth="signed-out"
         loginNext={loginNext}
       >
@@ -65,8 +77,8 @@ export default createRoute(async (c) => {
 
   return c.render(
     <Shell
+      currentPath={c.req.path}
       title="Invitation"
-
       auth={uid ? "signed-in" : "signed-out"}
       loginNext={uid ? undefined : loginNext}
     >
@@ -101,28 +113,58 @@ export default createRoute(async (c) => {
         </Card>
       ) : !uid ? (
         <Card className="max-w-lg space-y-6 p-6">
-          <p className="text-sm leading-relaxed text-kumo-subtle">
-            参加するにはアカウントが必要です。既にアカウントがある場合はログインし、はじめての場合はこの招待から新規作成してください。
-          </p>
-          <div className="flex flex-col gap-3">
-            <LinkPrimary
-              href={`/login?next=${encodeURIComponent(loginNext)}`}
-            >
-              既存のアカウントでログイン
-            </LinkPrimary>
-            <LinkOutline
-              href={`/signup?invite=${encodeURIComponent(raw)}`}
-            >
-              新規アカウントを作成
-            </LinkOutline>
-          </div>
-          <p className="text-xs text-kumo-subtle">
-            新規作成ではメール（招待で指定されている場合は固定）とパスキーを登録します。
-          </p>
+          {details.invitedEmail ? (
+            <>
+              <p className="text-sm leading-relaxed text-kumo-subtle">
+                この招待は{" "}
+                <span className="font-mono text-kumo-default">
+                  {details.invitedEmail}
+                </span>{" "}
+                宛に送られました。下のボタンからパスキーでアカウントを作成して
+                参加してください。既存のアカウントを持っている場合はログインに切り替えできます。
+              </p>
+              <div className="flex flex-col gap-3">
+                <LinkPrimary
+                  href={`/signup?invite=${encodeURIComponent(raw)}`}
+                >
+                  パスキーでアカウントを作成して参加
+                </LinkPrimary>
+                <LinkOutline
+                  href={`/login?next=${encodeURIComponent(loginNext)}`}
+                >
+                  既存のアカウントでログイン
+                </LinkOutline>
+              </div>
+              <p className="text-xs text-kumo-subtle">
+                作成時はメールアドレスが招待で指定された値に固定されます。
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm leading-relaxed text-kumo-subtle">
+                参加するにはアカウントが必要です。既にアカウントがある場合はログインし、はじめての場合はこの招待から新規作成してください。
+              </p>
+              <div className="flex flex-col gap-3">
+                <LinkPrimary
+                  href={`/login?next=${encodeURIComponent(loginNext)}`}
+                >
+                  既存のアカウントでログイン
+                </LinkPrimary>
+                <LinkOutline
+                  href={`/signup?invite=${encodeURIComponent(raw)}`}
+                >
+                  新規アカウントを作成
+                </LinkOutline>
+              </div>
+              <p className="text-xs text-kumo-subtle">
+                新規作成ではメールアドレスとパスキーを登録します。
+              </p>
+            </>
+          )}
         </Card>
       ) : eligibilityHint ? (
         <Card className="max-w-lg space-y-4 p-6">
-          <p className="text-sm text-amber-200/90">{eligibilityHint}</p>
+          <p className="text-sm text-amber-600 dark:text-amber-300">{eligibilityHint}</p>
           <TextLink href="/">← Home</TextLink>
         </Card>
       ) : (
@@ -160,6 +202,10 @@ export const POST = createRoute(async (c) => {
       `/invite/${encodeURIComponent(raw)}?e=${encodeURIComponent(result.reason)}`
     );
   }
+
+  // Invite consumed — drop the pending-invite cookie so subsequent logins
+  // don't loop back here.
+  clearPendingInviteCookie(c);
 
   return c.redirect(
     `/team/switch?id=${encodeURIComponent(result.orgId)}&next=${encodeURIComponent("/?ok=1")}`

@@ -8,6 +8,7 @@ import {
 } from "@wana/schema/control-plane";
 import {
   apiKeyHint,
+  generateNumericExternalId,
   generateSentryPublicKey,
   hashHex as hashDsnKey,
 } from "@wana/core";
@@ -31,19 +32,6 @@ async function getProjectOrgId(
 }
 
 const PROJECT_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}[a-zA-Z0-9]$/;
-
-/**
- * @sentry/core DSN parser keeps only a leading digit run when the segment mixes digits
- * with letters (e.g. UUID `8dcb…` → projectId `8`). Numeric-only ids stay as-is.
- */
-function assertSentryDsnCompatibleProjectId(projectId: string): void {
-  const isAllDigits = /^\d+$/.test(projectId);
-  if (!isAllDigits && /^\d/.test(projectId)) {
-    throw new Error(
-      "Project ID は Sentry SDK の DSN 解釈と互換である必要があります。先頭が数字の場合は数字のみ（例: 42）、それ以外は英字やアンダースコアで始めてください（自動採番の UUID は wan_ 付きで作成されます）。"
-    );
-  }
-}
 
 export async function listProjectsWithOrg(d1: D1Database) {
   const db = createDb(d1);
@@ -286,6 +274,57 @@ export async function deleteProject(
   return { doId: rows[0].doId };
 }
 
+/**
+ * One-shot project + access + role lookup. Replaces three separate calls
+ * (`getProjectRow` + `userCanAccessProject` + `getProjectRoleForUser`)
+ * with a single JOIN. Returns `null` for projects the user can't access,
+ * so the caller does a single null-check.
+ */
+export async function getProjectAccessSummary(
+  d1: D1Database,
+  projectId: string,
+  userId: string
+): Promise<
+  | {
+      id: string;
+      name: string;
+      doId: string;
+      orgId: string;
+      orgName: string;
+      orgSlug: string;
+      retentionDays: number;
+      maxEventsPerMonth: number | null;
+      role: OrgRole;
+    }
+  | null
+> {
+  const db = createDb(d1);
+  const rows = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      doId: projects.doId,
+      orgId: projects.orgId,
+      orgName: organizations.name,
+      orgSlug: organizations.slug,
+      retentionDays: projects.retentionDays,
+      maxEventsPerMonth: projects.maxEventsPerMonth,
+      role: organizationMembers.role,
+    })
+    .from(projects)
+    .innerJoin(organizations, eq(projects.orgId, organizations.id))
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.orgId, projects.orgId),
+        eq(organizationMembers.userId, userId)
+      )
+    )
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function getProjectRow(d1: D1Database, projectId: string) {
   const db = createDb(d1);
   const rows = await db
@@ -293,14 +332,92 @@ export async function getProjectRow(d1: D1Database, projectId: string) {
       id: projects.id,
       name: projects.name,
       doId: projects.doId,
+      externalId: projects.externalId,
       orgName: organizations.name,
       orgSlug: organizations.slug,
+      retentionDays: projects.retentionDays,
+      maxEventsPerMonth: projects.maxEventsPerMonth,
     })
     .from(projects)
     .innerJoin(organizations, eq(projects.orgId, organizations.id))
     .where(eq(projects.id, projectId))
     .limit(1);
   return rows[0];
+}
+
+/**
+ * Resolve a project by its DSN-facing numeric `externalId` rather than its
+ * slug `id` — used by routes reached via a Sentry-style DSN (e.g. the CLI's
+ * `debug-files` upload), where the URL segment is the external id, not the
+ * project slug.
+ */
+export async function getProjectRowByExternalId(
+  d1: D1Database,
+  rawExternalId: string
+) {
+  if (!/^\d+$/.test(rawExternalId)) return undefined;
+  const db = createDb(d1);
+  const rows = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      doId: projects.doId,
+      externalId: projects.externalId,
+      orgName: organizations.name,
+      orgSlug: organizations.slug,
+      retentionDays: projects.retentionDays,
+      maxEventsPerMonth: projects.maxEventsPerMonth,
+    })
+    .from(projects)
+    .innerJoin(organizations, eq(projects.orgId, organizations.id))
+    .where(eq(projects.externalId, Number(rawExternalId)))
+    .limit(1);
+  return rows[0];
+}
+
+/** Update retention + quota fields. admin+ only — checked at the route. */
+export async function updateProjectQuota(
+  d1: D1Database,
+  input: {
+    projectId: string;
+    actingUserId: string;
+    retentionDays: number;
+    maxEventsPerMonth: number | null;
+  }
+): Promise<void> {
+  const role = await getProjectRoleForUser(
+    d1,
+    input.actingUserId,
+    input.projectId
+  );
+  if (!role || !orgRoleAtLeast(role, "admin")) {
+    throw new Error("プロジェクト設定の変更には admin 以上が必要です");
+  }
+  const clampedRetention = Math.max(
+    1,
+    Math.min(365, Math.floor(input.retentionDays))
+  );
+  const clampedQuota =
+    input.maxEventsPerMonth === null
+      ? null
+      : Math.max(1, Math.floor(input.maxEventsPerMonth));
+  const db = createDb(d1);
+  await db
+    .update(projects)
+    .set({
+      retentionDays: clampedRetention,
+      maxEventsPerMonth: clampedQuota,
+    })
+    .where(eq(projects.id, input.projectId));
+  await recordAuditEvent(d1, {
+    actorUserId: input.actingUserId,
+    projectId: input.projectId,
+    action: "project.quota.update",
+    payload: {
+      retentionDays: clampedRetention,
+      maxEventsPerMonth: clampedQuota,
+    },
+  });
 }
 
 /**
@@ -317,6 +434,7 @@ export async function createProjectWithApiKey(
   }
 ): Promise<{
   projectId: string;
+  externalId: number;
   doId: string;
   plainKey: string;
   hint: string;
@@ -335,7 +453,6 @@ export async function createProjectWithApiKey(
       "Project ID must be 2–64 chars: letters, numbers, underscore, hyphen, dot"
     );
   }
-  assertSentryDsnCompatibleProjectId(projectId);
 
   const db = createDb(d1);
   const orgRows = await db
@@ -372,11 +489,26 @@ export async function createProjectWithApiKey(
   const hint = apiKeyHint(plainKey);
   const now = Date.now();
 
+  // externalId is randomly generated (900M possible values) — a handful of
+  // uniqueness retries makes collisions practically impossible without
+  // needing a DB sequence.
+  let externalId = generateNumericExternalId();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const clash = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.externalId, externalId))
+      .limit(1);
+    if (clash.length === 0) break;
+    externalId = generateNumericExternalId();
+  }
+
   await db.insert(projects).values({
     id: projectId,
     orgId: input.orgId,
     name,
     doId,
+    externalId,
     createdAt: new Date(now),
   });
 
@@ -397,5 +529,5 @@ export async function createProjectWithApiKey(
     payload: { name, hint },
   });
 
-  return { projectId, doId, plainKey, hint };
+  return { projectId, externalId, doId, plainKey, hint };
 }
