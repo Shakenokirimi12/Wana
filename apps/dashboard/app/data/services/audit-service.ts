@@ -25,7 +25,9 @@ export type AuditAction =
   | "notification.endpoint.rotate_secret"
   | "notification.rule.create"
   | "notification.rule.update"
-  | "notification.rule.delete";
+  | "notification.rule.delete"
+  | "pat.create"
+  | "pat.revoke";
 
 export interface AuditInput {
   actorUserId?: string | null;

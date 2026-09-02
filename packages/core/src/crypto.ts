@@ -34,6 +34,11 @@ export function apiKeyHint(publicKey: string): string {
   return `…${publicKey.slice(-6)}`;
 }
 
+/** Personal access token for user-scoped programmatic access (e.g. the remote MCP server). */
+export function generatePersonalAccessToken(): string {
+  return `wana_pat_${randomHex(24)}`;
+}
+
 export function parseSentryAuthHeader(
   header: string
 ): { sentryKey: string } | null {

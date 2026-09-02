@@ -297,6 +297,12 @@ function SidebarBody(props: {
               active={isPathActive("/settings/account", currentPath)}
               variant="small"
             />
+            <SideLink
+              href="/settings/tokens"
+              label="API tokens"
+              active={isPathActive("/settings/tokens", currentPath)}
+              variant="small"
+            />
             <a
               href="/logout"
               className="flex items-center gap-2 rounded-md border border-kumo-hairline px-2.5 py-1.5 text-xs text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
