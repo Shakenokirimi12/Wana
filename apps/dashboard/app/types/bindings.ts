@@ -33,6 +33,8 @@ export type Env = {
   MAIL_FROM?: string;
   /** Optional footer link to @wana/sentry-playground (e.g. http://127.0.0.1:8790). */
   SENTRY_PLAYGROUND_URL?: string;
+  /** Public URL of the remote MCP server (@wana/mcp), shown on the API tokens settings page. */
+  MCP_PUBLIC_URL?: string;
   /**
    * When `"true"`, do not redirect `http://127.0.0.1` → `http://localhost` (for rare debugging only).
    * Default: redirect so WebAuthn uses hostname `localhost`.

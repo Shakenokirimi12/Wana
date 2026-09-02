@@ -28,6 +28,7 @@ const DEPLOY_ORDER = [
     { id: "worker", relPath: "apps/worker" },
     { id: "ingest", relPath: "apps/ingest" },
     { id: "dashboard", relPath: "apps/dashboard" },
+    { id: "mcp", relPath: "apps/mcp" },
 ];
 // Resource names (kept in sync with the wrangler.jsonc files).
 const RESOURCES = {
@@ -41,6 +42,7 @@ const RESOURCES = {
 const WORKER_DIR = join(REPO_ROOT, "apps/worker");
 const INGEST_DIR = join(REPO_ROOT, "apps/ingest");
 const DASHBOARD_DIR = join(REPO_ROOT, "apps/dashboard");
+const MCP_DIR = join(REPO_ROOT, "apps/mcp");
 function runPackageDeploy(absDir) {
     const result = spawnSync("pnpm", ["run", "deploy"], {
         cwd: absDir,
@@ -114,7 +116,7 @@ cli
         console.log("Would create on your Cloudflare account:");
         for (const p of plan)
             console.log(`  - ${p}`);
-        console.log("\nThen write database_id + KV id into apps/{ingest,dashboard,worker}/wrangler.jsonc");
+        console.log("\nThen write database_id + KV id into apps/{ingest,dashboard,worker,mcp}/wrangler.jsonc");
         console.log("and apply D1 migrations (--remote).");
         return;
     }
@@ -173,6 +175,7 @@ cli
     const writes = [
         [join(INGEST_DIR, "wrangler.jsonc"), "database_id", d1Id],
         [join(DASHBOARD_DIR, "wrangler.jsonc"), "database_id", d1Id],
+        [join(MCP_DIR, "wrangler.jsonc"), "database_id", d1Id],
         [join(INGEST_DIR, "wrangler.jsonc"), "id", kvId],
         [join(WORKER_DIR, "wrangler.jsonc"), "id", kvId],
         [join(DASHBOARD_DIR, "wrangler.jsonc"), "id", kvId],

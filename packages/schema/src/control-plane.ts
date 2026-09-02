@@ -83,6 +83,30 @@ export const apiKeys = sqliteTable(
   (t) => [index("idx_api_keys_hash_project").on(t.keyHash, t.projectId)]
 );
 
+/**
+ * User-scoped bearer tokens for programmatic access (remote MCP server, future
+ * CLI/API use). Distinct from `apiKeys`, which are project-scoped and used
+ * only for Sentry-SDK/DSN ingest auth — these carry the issuing user's own
+ * org memberships, so a request authenticated with one can only reach
+ * projects that user can already see in the dashboard.
+ */
+export const personalAccessTokens = sqliteTable(
+  "personal_access_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").unique().notNull(),
+    hint: text("hint").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+  },
+  (t) => [index("idx_pat_user").on(t.userId)]
+);
+
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
   userId: text("user_id")

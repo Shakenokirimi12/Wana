@@ -31,7 +31,8 @@ wana/
 ├── apps/
 │   ├── dashboard/      # Hono + Vite + Tailwind (管理画面)
 │   ├── ingest/         # Hono (Sentry 互換 API)
-│   └── worker/         # DO + Queue Consumer
+│   ├── worker/         # DO + Queue Consumer
+│   └── mcp/            # Remote MCP サーバー（AIエージェント向け、個人アクセストークン認証）
 ├── packages/
 │   ├── cli/            # `pnpm wana` / `deploy:cloud`（wrangler ラッパー）
 │   ├── schema/         # Drizzle ORM スキーマ

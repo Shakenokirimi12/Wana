@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wana-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // D1 for control plane data (orgs/projects/users/personal_access_tokens)
+  "d1_databases": [
+    {
+      "binding": "DB_CONTROL",
+      "database_name": "wana-control-plane",
+      "database_id": "22092b33-3345-4efe-b9d3-298ba9c47bb0",
+      "migrations_dir": "../../packages/schema/migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PAYLOAD_STORAGE",
+      "bucket_name": "wana-payloads"
+    }
+  ],
+  // Cross-Worker binding to the ProjectDataStore DO — same pattern as
+  // apps/dashboard's PROJECT_DO binding.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROJECT_DO",
+        "class_name": "ProjectDataStore",
+        "script_name": "wana-worker"
+      }
+    ]
+  },
+  "vars": {
+    // Shown back to MCP clients in tool-call error messages / server info.
+    "MCP_PUBLIC_URL": "https://mcp.wana.shakenokiri.me"
+  }
+}

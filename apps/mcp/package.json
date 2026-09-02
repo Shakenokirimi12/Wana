@@ -1,0 +1,27 @@
+{
+  "name": "@wana/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8791 --inspector-port 9234",
+    "deploy": "wrangler deploy --minify",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@wana/core": "workspace:*",
+    "@wana/schema": "workspace:*",
+    "@wana/types": "workspace:*",
+    "@wana/worker": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.12.16",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250421.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.4.0"
+  }
+}
