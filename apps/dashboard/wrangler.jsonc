@@ -34,10 +34,11 @@
   // `.dev.vars` or the `--var` flag in the preview-stack script.
   "vars": {
     "INGEST_PUBLIC_URL": "https://ingest.wana.shakenokiri.me",
-    // Shown on /settings/tokens after issuing a PAT. Kept in sync with
-    // apps/mcp/wrangler.jsonc's own MCP_PUBLIC_URL — Workers/Pages don't
-    // share vars across services, so this has to be set independently here.
-    "MCP_PUBLIC_URL": "https://mcp.wana.shakenokiri.me",
+    // Shown on /settings/tokens after issuing a PAT. Workers.dev fallback —
+    // no DNS edit permission on the shakenokiri.me zone from this token, so
+    // mcp.wana.shakenokiri.me isn't attached yet. Swap to the custom domain
+    // once it's added manually (see apps/mcp/README.md → Deploy).
+    "MCP_PUBLIC_URL": "https://wana-mcp.shakenokirimi12.workers.dev",
     "DASHBOARD_USER_ID": "",
     "DASHBOARD_DEV_FALLBACK": "false",
     "MAIL_FROM": "noreply@example.com",

@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wana-mcp",
+  "account_id": "e906e021427d39f19c60b3ef8edfe9a8",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-02",
   "compatibility_flags": ["nodejs_compat"],
